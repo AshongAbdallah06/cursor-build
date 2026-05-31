@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { Loader2, Send } from "lucide-react";
 import { AssistantDraftCard } from "@/components/calendar/assistant-draft-card";
 import { AssistantMessageContent } from "@/components/calendar/assistant-message-content";
+import { AssistantStarterPrompts } from "@/components/calendar/assistant-starter-prompts";
 import { useAssistant } from "@/components/providers/assistant-provider";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,9 +18,17 @@ export function CalendarAssistantPanel() {
     sending,
     confirmingDraftId,
     sendMessage,
+    sendStarterPrompt,
     confirmDraft,
     dismissDraft,
   } = useAssistant();
+
+  const showStarterPrompts = useMemo(
+    () =>
+      !sending &&
+      !messages.some((message) => message.role === "user"),
+    [messages, sending],
+  );
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -94,6 +103,13 @@ export function CalendarAssistantPanel() {
               )}
             </div>
           ))}
+
+          {showStarterPrompts ? (
+            <AssistantStarterPrompts
+              disabled={sending}
+              onSelect={(prompt) => void sendStarterPrompt(prompt.message)}
+            />
+          ) : null}
 
           {sending && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">

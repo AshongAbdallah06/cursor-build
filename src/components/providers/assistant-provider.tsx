@@ -27,7 +27,7 @@ import { useUser } from "@/components/providers/user-provider";
 export const ASSISTANT_WELCOME_MESSAGE: AssistantChatMessage = {
   role: "assistant",
   content:
-    "Hi! I can help you plan your schedule and check availability. When you're ready to add something, I'll draft it first and ask you to confirm before it goes on your calendar. What would you like to plan?",
+    "Hi! I'm your calendar assistant. Choose a starter below or type your own message — I'll draft any changes and ask you to confirm before saving.",
 };
 
 function getInitialMessages(userId: string) {
@@ -44,6 +44,7 @@ interface AssistantContextValue {
   sending: boolean;
   confirmingDraftId: string | null;
   sendMessage: () => Promise<void>;
+  sendStarterPrompt: (message: string) => Promise<void>;
   confirmDraft: (draftId: string) => Promise<void>;
   dismissDraft: (draftId: string) => void;
 }
@@ -96,68 +97,83 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
     void refreshTasks({ force: true });
   }, [currentUser.id, refreshTasks]);
 
+  const submitMessage = useCallback(
+    async (rawContent: string) => {
+      const trimmed = rawContent.trim();
+      if (!trimmed || sending) return;
+
+      const nextMessages: AssistantChatMessage[] = [
+        ...messages,
+        { role: "user", content: trimmed },
+      ];
+
+      setMessages(nextMessages);
+      setInput("");
+      setSending(true);
+
+      try {
+        const response = await fetch("/api/calendar/assistant/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: nextMessages.map(stripAssistantMessageForApi),
+          }),
+        });
+
+        const data = (await response.json()) as {
+          message?: string;
+          calendarUpdated?: boolean;
+          pendingDraft?: AssistantScheduleDraft;
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(data.error ?? "Assistant request failed");
+        }
+
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            content: data.message ?? "Done.",
+            draft: data.pendingDraft,
+            draftStatus: data.pendingDraft ? "pending" : undefined,
+          },
+        ]);
+
+        if (data.calendarUpdated) {
+          handleCalendarUpdated();
+        }
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error
+            ? err.message
+            : "Something went wrong. Please try again.";
+
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            content: `Sorry, I couldn't complete that request.\n\n${errorMessage}`,
+          },
+        ]);
+      } finally {
+        setSending(false);
+      }
+    },
+    [handleCalendarUpdated, messages, sending],
+  );
+
   const sendMessage = useCallback(async () => {
-    const trimmed = input.trim();
-    if (!trimmed || sending) return;
+    await submitMessage(input);
+  }, [input, submitMessage]);
 
-    const attemptedMessage = trimmed;
-    const nextMessages: AssistantChatMessage[] = [
-      ...messages,
-      { role: "user", content: attemptedMessage },
-    ];
-
-    setMessages(nextMessages);
-    setInput("");
-    setSending(true);
-
-    try {
-      const response = await fetch("/api/calendar/assistant/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: nextMessages.map(stripAssistantMessageForApi),
-        }),
-      });
-
-      const data = (await response.json()) as {
-        message?: string;
-        calendarUpdated?: boolean;
-        pendingDraft?: AssistantScheduleDraft;
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Assistant request failed");
-      }
-
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: data.message ?? "Done.",
-          draft: data.pendingDraft,
-          draftStatus: data.pendingDraft ? "pending" : undefined,
-        },
-      ]);
-
-      if (data.calendarUpdated) {
-        handleCalendarUpdated();
-      }
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Something went wrong. Please try again.";
-
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: `Sorry, I couldn't complete that request.\n\n${errorMessage}`,
-        },
-      ]);
-    } finally {
-      setSending(false);
-    }
-  }, [handleCalendarUpdated, input, messages, sending]);
+  const sendStarterPrompt = useCallback(
+    async (message: string) => {
+      await submitMessage(message);
+    },
+    [submitMessage],
+  );
 
   const confirmDraft = useCallback(
     async (draftId: string) => {
@@ -238,6 +254,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       sending,
       confirmingDraftId,
       sendMessage,
+      sendStarterPrompt,
       confirmDraft,
       dismissDraft,
     }),
@@ -248,6 +265,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       sending,
       confirmingDraftId,
       sendMessage,
+      sendStarterPrompt,
       confirmDraft,
       dismissDraft,
       toggleOpen,
