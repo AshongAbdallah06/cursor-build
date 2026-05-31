@@ -1,0 +1,119 @@
+// Calendar & Task Tracking — database schema
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  PROVIDER
+  CLIENT
+}
+
+enum TaskStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum NotificationType {
+  TASK_ADDED
+  STATUS_CHANGED
+  DEADLINE_APPROACHING
+}
+
+enum CalendarProvider {
+  GOOGLE
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  role      UserRole
+  fullName  String   @map("full_name")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdTasks           Task[]                @relation("CreatedTasks")
+  assignedTasks          Task[]                @relation("AssignedTasks")
+  notifications          Notification[]
+  calendarIntegrations   CalendarIntegration[]
+
+  @@map("users")
+}
+
+model CalendarIntegration {
+  id            String           @id @default(uuid()) @db.Uuid
+  userId        String           @map("user_id") @db.Uuid
+  provider      CalendarProvider @default(GOOGLE)
+  accessToken   String           @map("access_token") @db.Text
+  refreshToken  String?          @map("refresh_token") @db.Text
+  tokenExpiry   DateTime?        @map("token_expiry")
+  calendarId    String           @default("primary") @map("calendar_id")
+  calendarEmail String?          @map("calendar_email")
+  syncEnabled   Boolean          @default(true) @map("sync_enabled")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@map("calendar_integrations")
+}
+
+model Task {
+  id           String       @id @default(uuid()) @db.Uuid
+  title        String
+  description  String?      @db.Text
+  startTime    DateTime     @map("start_time")
+  endTime      DateTime     @map("end_time")
+  createdById  String       @map("created_by") @db.Uuid
+  assignedToId String       @map("assigned_to") @db.Uuid
+  status       TaskStatus   @default(PENDING)
+  priority     TaskPriority @default(MEDIUM)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  createdBy  User @relation("CreatedTasks", fields: [createdById], references: [id], onDelete: Cascade)
+  assignedTo User @relation("AssignedTasks", fields: [assignedToId], references: [id], onDelete: Cascade)
+
+  @@index([assignedToId, startTime])
+  @@index([createdById])
+  @@index([status])
+  @@map("tasks")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  message   String
+  type      NotificationType
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
