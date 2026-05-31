@@ -2,10 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { sendTaskRequestEmail } from "@/lib/email/task-request-email";
 import { serializeTask } from "@/lib/tasks/serialize";
 import {
-  assertProviderExists,
-  assertTaskAssignedToProvider,
-  resolveProviderForClient,
-} from "@/lib/users/provider-service";
+  assertTaskAssignedToUser,
+  assertUserExists,
+} from "@/lib/users/user-lookup";
 import {
   tasksOverlap,
   validateTaskTimes,
@@ -28,9 +27,9 @@ export interface UpdateTaskData {
 }
 
 export interface CreatePublicTaskRequestInput {
-  providerId: string;
-  clientName: string;
-  clientEmail: string;
+  hostUserId: string;
+  requesterName: string;
+  requesterEmail: string;
   title: string;
   description?: string;
   startTime: Date;
@@ -54,26 +53,17 @@ async function getSessionUser(userId: string) {
   return user;
 }
 
-export async function getProviderPublicProfile(providerId: string) {
-  const user = await prisma.user.findUnique({ where: { id: providerId } });
-  if (!user || user.role !== "PROVIDER") {
-    return null;
-  }
-  return {
-    id: user.id,
-    fullName: user.fullName,
-  };
-}
+export { getUserPublicProfile } from "@/lib/users/user-lookup";
 
 async function assertNoScheduleConflict(
-  providerId: string,
+  assigneeId: string,
   startTime: Date,
   endTime: Date,
   excludeTaskId?: string,
 ) {
   const existingTasks = await prisma.task.findMany({
     where: {
-      assignedToId: providerId,
+      assignedToId: assigneeId,
       ...(excludeTaskId ? { id: { not: excludeTaskId } } : {}),
     },
     select: { startTime: true, endTime: true },
@@ -90,16 +80,13 @@ async function assertNoScheduleConflict(
   }
 }
 
-async function findOrCreateClient(email: string, fullName: string) {
+async function findOrCreateRequester(email: string, fullName: string) {
   const normalizedEmail = email.trim().toLowerCase();
   const existing = await prisma.user.findUnique({
     where: { email: normalizedEmail },
   });
 
   if (existing) {
-    if (existing.role !== "CLIENT") {
-      throw new Error("This email cannot be used to submit task requests.");
-    }
     if (existing.fullName !== fullName.trim()) {
       return prisma.user.update({
         where: { id: existing.id },
@@ -113,7 +100,6 @@ async function findOrCreateClient(email: string, fullName: string) {
     data: {
       email: normalizedEmail,
       fullName: fullName.trim(),
-      role: "CLIENT",
     },
   });
 }
@@ -126,20 +112,18 @@ export async function createPublicTaskRequest(
     throw new Error(timeError);
   }
 
-  const provider = await prisma.user.findUnique({
-    where: { id: input.providerId },
-  });
-  if (!provider || provider.role !== "PROVIDER") {
-    throw new Error("Provider not found");
-  }
+  const host = await assertUserExists(input.hostUserId);
 
   await assertNoScheduleConflict(
-    input.providerId,
+    input.hostUserId,
     input.startTime,
     input.endTime,
   );
 
-  const client = await findOrCreateClient(input.clientEmail, input.clientName);
+  const requester = await findOrCreateRequester(
+    input.requesterEmail,
+    input.requesterName,
+  );
 
   const task = await prisma.task.create({
     data: {
@@ -147,8 +131,8 @@ export async function createPublicTaskRequest(
       description: input.description?.trim() || null,
       startTime: input.startTime,
       endTime: input.endTime,
-      createdById: client.id,
-      assignedToId: input.providerId,
+      createdById: requester.id,
+      assignedToId: input.hostUserId,
       status: "PENDING",
       priority: input.priority,
     },
@@ -157,17 +141,17 @@ export async function createPublicTaskRequest(
 
   await prisma.notification.create({
     data: {
-      userId: input.providerId,
+      userId: input.hostUserId,
       type: "TASK_ADDED",
-      message: `${client.fullName} requested a new task: "${task.title}"`,
+      message: `${requester.fullName} requested a new task: "${task.title}"`,
     },
   });
 
   void sendTaskRequestEmail({
-    providerEmail: provider.email,
-    providerName: provider.fullName,
-    clientName: client.fullName,
-    clientEmail: client.email,
+    providerEmail: host.email,
+    providerName: host.fullName,
+    clientName: requester.fullName,
+    clientEmail: requester.email,
     title: task.title,
     description: task.description,
     startTime: task.startTime,
@@ -188,22 +172,13 @@ export async function createAssistantSchedule(
   userId: string,
   input: CreateAssistantScheduleInput,
 ) {
-  const user = await getSessionUser(userId);
+  await getSessionUser(userId);
   const timeError = validateTaskTimes(input.startTime, input.endTime);
   if (timeError) {
     throw new Error(timeError);
   }
 
-  const providerId =
-    user.role === "PROVIDER" ? user.id : await resolveProviderForClient(user.id);
-
-  await assertProviderExists(providerId);
-
-  await assertNoScheduleConflict(
-    providerId,
-    input.startTime,
-    input.endTime,
-  );
+  await assertNoScheduleConflict(userId, input.startTime, input.endTime);
 
   const task = await prisma.task.create({
     data: {
@@ -211,35 +186,24 @@ export async function createAssistantSchedule(
       description: input.description?.trim() || null,
       startTime: input.startTime,
       endTime: input.endTime,
-      createdById: user.id,
-      assignedToId: providerId,
-      status: user.role === "PROVIDER" ? "ACCEPTED" : "PENDING",
+      createdById: userId,
+      assignedToId: userId,
+      status: "ACCEPTED",
       priority: input.priority ?? "MEDIUM",
     },
     include: taskInclude,
   });
 
-  if (user.role === "CLIENT") {
-    await prisma.notification.create({
-      data: {
-        userId: providerId,
-        type: "TASK_ADDED",
-        message: `${user.fullName} requested a new task via assistant: "${task.title}"`,
-      },
-    });
-  }
-
   return serializeTask(task);
 }
 
 export async function listTasksForUser(userId: string) {
-  const user = await getSessionUser(userId);
+  await getSessionUser(userId);
 
   const tasks = await prisma.task.findMany({
-    where:
-      user.role === "PROVIDER"
-        ? { assignedToId: userId }
-        : { createdById: userId },
+    where: {
+      OR: [{ createdById: userId }, { assignedToId: userId }],
+    },
     include: taskInclude,
     orderBy: { startTime: "asc" },
   });
@@ -252,18 +216,14 @@ export async function updateTaskForUser(
   taskId: string,
   data: UpdateTaskData,
 ) {
-  const user = await getSessionUser(userId);
+  await getSessionUser(userId);
   const existing = await prisma.task.findUnique({ where: { id: taskId } });
 
   if (!existing) {
     throw new Error("Task not found");
   }
 
-  if (user.role !== "PROVIDER") {
-    throw new Error("Only the provider can update tasks");
-  }
-
-  await assertTaskAssignedToProvider(user.id, existing.assignedToId);
+  await assertTaskAssignedToUser(userId, existing.assignedToId);
 
   const startTime = data.startTime ?? existing.startTime;
   const endTime = data.endTime ?? existing.endTime;
@@ -299,18 +259,14 @@ export async function updateTaskForUser(
 }
 
 export async function deleteTaskForUser(userId: string, taskId: string) {
-  const user = await getSessionUser(userId);
+  await getSessionUser(userId);
   const existing = await prisma.task.findUnique({ where: { id: taskId } });
 
   if (!existing) {
     throw new Error("Task not found");
   }
 
-  if (user.role !== "PROVIDER") {
-    throw new Error("Only the provider can delete tasks");
-  }
-
-  await assertTaskAssignedToProvider(user.id, existing.assignedToId);
+  await assertTaskAssignedToUser(userId, existing.assignedToId);
 
   await prisma.task.delete({ where: { id: taskId } });
 }

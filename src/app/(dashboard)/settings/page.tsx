@@ -11,11 +11,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 
 export default function SettingsPage() {
-  const { currentUser, isProvider } = useUser();
+  const { currentUser } = useUser();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -39,12 +38,6 @@ export default function SettingsPage() {
           <div className="flex justify-between">
             <span className="text-sm text-muted-foreground">Email</span>
             <span className="text-sm font-medium">{currentUser.email}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-sm text-muted-foreground">Role</span>
-            <Badge variant={isProvider ? "default" : "secondary"}>
-              {currentUser.role}
-            </Badge>
           </div>
         </CardContent>
       </Card>

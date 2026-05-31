@@ -64,7 +64,7 @@ export const TASK_PRIORITY_COLORS: Record<
   HIGH: { bg: "bg-red-100", border: "border-red-500" },
 };
 
-export const PROVIDER_STATUS_FLOW: TaskStatus[] = [
+export const INCOMING_TASK_STATUS_FLOW: TaskStatus[] = [
   "PENDING",
   "ACCEPTED",
   "IN_PROGRESS",

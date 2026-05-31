@@ -19,6 +19,31 @@ import { prisma } from "@/lib/prisma";
 
 const MAX_TOOL_ROUNDS = 5;
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function generateGeminiContentWithRetry(
+  params: any,
+  retries = 3,
+  delayMs = 2000
+): Promise<any> {
+  try {
+    return await generateGeminiContent(params);
+  } catch (error: any) {
+    const isRateLimit = 
+      error?.message?.toLowerCase().includes("quota exceeded") || 
+      error?.message?.toLowerCase().includes("429");
+
+    if (isRateLimit && retries > 0) {
+      console.warn(`[Gemini Rate Limit] Hit quota limit. Retrying in ${delayMs / 1000}s... (${retries} retries left)`);
+      await delay(delayMs);
+      // Exponentially increase the delay for the next potential retry
+      return generateGeminiContentWithRetry(params, retries - 1, delayMs * 2);
+    }
+    // If it's a different error or we ran out of retries, throw it
+    throw error;
+  }
+}
+
 export async function runCalendarAssistantChat(
   userId: string,
   messages: AssistantChatMessage[],
@@ -31,7 +56,6 @@ export async function runCalendarAssistantChat(
   const googleStatus = await getGoogleIntegrationStatus(userId);
   const systemInstruction = buildAssistantSystemPrompt({
     userName: user.fullName,
-    userRole: user.role,
     now: new Date(),
     googleConnected: googleStatus.connected && googleStatus.syncEnabled,
   });
@@ -41,7 +65,8 @@ export async function runCalendarAssistantChat(
   let finalMessage = "";
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await generateGeminiContent({
+    // Swapped native function with our new retry mechanism
+    const response = await generateGeminiContentWithRetry({
       systemInstruction: { parts: [{ text: systemInstruction }] },
       contents,
       tools: [{ functionDeclarations: CALENDAR_ASSISTANT_TOOLS }],
@@ -102,7 +127,8 @@ export async function runCalendarAssistantChat(
   }
 
   if (!finalMessage) {
-    const followUp = await generateGeminiContent({
+    // Swapped native function with our new retry mechanism here as well
+    const followUp = await generateGeminiContentWithRetry({
       systemInstruction: { parts: [{ text: systemInstruction }] },
       contents,
     });

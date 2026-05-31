@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   createPublicTaskRequest,
-  getProviderPublicProfile,
+  getUserPublicProfile,
 } from "@/lib/tasks/task-service";
 import { serializeTaskForJson } from "@/lib/tasks/serialize";
 import { combineDateAndTime, validateTaskTimes } from "@/lib/tasks/validation";
@@ -9,18 +9,18 @@ import type { TaskPriority } from "@/types";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const providerId = searchParams.get("providerId");
+  const hostUserId = searchParams.get("providerId");
 
-  if (!providerId) {
+  if (!hostUserId) {
     return NextResponse.json({ error: "providerId is required" }, { status: 400 });
   }
 
-  const provider = await getProviderPublicProfile(providerId);
-  if (!provider) {
-    return NextResponse.json({ error: "Provider not found" }, { status: 404 });
+  const host = await getUserPublicProfile(hostUserId);
+  if (!host) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ provider });
+  return NextResponse.json({ provider: host });
 }
 
 export async function POST(request: Request) {
@@ -68,9 +68,9 @@ export async function POST(request: Request) {
     }
 
     const task = await createPublicTaskRequest({
-      providerId: body.providerId,
-      clientName: body.clientName,
-      clientEmail: body.clientEmail,
+      hostUserId: body.providerId,
+      requesterName: body.clientName,
+      requesterEmail: body.clientEmail,
       title: body.title,
       description: body.description,
       startTime,

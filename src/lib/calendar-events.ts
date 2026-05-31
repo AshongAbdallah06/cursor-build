@@ -28,11 +28,11 @@ function getEventBorderColor(task: Task): string {
 
 export function taskToCalendarEvent(
   task: Task,
-  options?: { showClientName?: boolean },
+  options?: { showRequesterName?: boolean },
 ): EventInput {
   const colors = TASK_STATUS_EVENT_COLORS[task.status];
   const title =
-    options?.showClientName && task.createdBy
+    options?.showRequesterName && task.createdBy
       ? `${task.title} · ${task.createdBy.fullName}`
       : task.title;
 
@@ -99,25 +99,21 @@ export function googleEventToCalendarEvent(
 
 export function buildCalendarEvents(
   tasks: Task[],
-  busySlots: BusySlot[],
-  isProvider: boolean,
   googleEvents: GoogleCalendarEvent[] = [],
+  userId?: string,
 ): EventInput[] {
   const taskEvents = tasks.map((task) =>
-    taskToCalendarEvent(task, { showClientName: isProvider }),
+    taskToCalendarEvent(task, {
+      showRequesterName:
+        Boolean(userId) &&
+        task.assignedToId === userId &&
+        task.createdById !== userId,
+    }),
   );
 
   const googleCalendarEvents = googleEvents.map(googleEventToCalendarEvent);
 
-  if (isProvider) {
-    return [...taskEvents, ...googleCalendarEvents];
-  }
-
-  return [
-    ...taskEvents,
-    ...busySlots.map(busySlotToCalendarEvent),
-    ...googleCalendarEvents,
-  ];
+  return [...taskEvents, ...googleCalendarEvents];
 }
 
 export function filterCalendarEvents(

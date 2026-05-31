@@ -1,12 +1,10 @@
 "use client";
 
-import { useUser } from "@/components/providers/user-provider";
 import { useTasks } from "@/components/providers/tasks-provider";
 import { KanbanBoard } from "@/components/tasks/kanban-board";
 import { Loader2 } from "lucide-react";
 
 export default function TasksPage() {
-  const { isProvider } = useUser();
   const { loading, error } = useTasks();
 
   return (
@@ -14,9 +12,7 @@ export default function TasksPage() {
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Tasks</h2>
         <p className="text-muted-foreground">
-          {isProvider
-            ? "Drag tasks between columns to update their status. Changes are saved to the database."
-            : "Track the status of your requested tasks."}
+          Manage items on your calendar and track requests you&apos;ve sent.
         </p>
       </div>
 

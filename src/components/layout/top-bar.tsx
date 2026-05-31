@@ -33,7 +33,7 @@ function getInitials(name: string) {
 
 export function TopBar() {
   const router = useRouter();
-  const { currentUser, isProvider } = useUser();
+  const { currentUser } = useUser();
   const { unreadCount } = useNotifications();
 
   const handleSignOut = async () => {
@@ -49,13 +49,9 @@ export function TopBar() {
 
       <div className="flex flex-1 items-center justify-between">
         <div>
-          <h1 className="text-sm font-semibold">
-            {isProvider ? "Provider Dashboard" : "Client Portal"}
-          </h1>
+          <h1 className="text-sm font-semibold">Dashboard</h1>
           <p className="text-xs text-muted-foreground">
-            {isProvider
-              ? "Manage all client requests and your schedule"
-              : "Request time and track your tasks"}
+            Manage your schedule and incoming requests
           </p>
         </div>
 

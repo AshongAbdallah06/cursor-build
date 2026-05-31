@@ -24,7 +24,6 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { Badge } from "@/components/ui/badge";
 
 const ICON_MAP = {
   Calendar,
@@ -35,7 +34,7 @@ const ICON_MAP = {
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const { currentUser, isProvider } = useUser();
+  const { currentUser } = useUser();
 
   return (
     <Sidebar collapsible="icon">
@@ -89,14 +88,9 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border">
         <div className="px-2 py-2 group-data-[collapsible=icon]:hidden">
           <p className="truncate text-sm font-medium">{currentUser.fullName}</p>
-          <div className="mt-1 flex items-center gap-2">
-            <Badge variant={isProvider ? "default" : "secondary"} className="text-xs">
-              {isProvider ? "Provider" : "Client"}
-            </Badge>
-            <span className="truncate text-xs text-muted-foreground">
-              {currentUser.email}
-            </span>
-          </div>
+          <p className="truncate text-xs text-muted-foreground">
+            {currentUser.email}
+          </p>
         </div>
       </SidebarFooter>
       <SidebarRail />

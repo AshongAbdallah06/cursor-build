@@ -79,11 +79,11 @@ export function SignInForm({ nextPath, error }: SignInFormProps) {
         <div className="relative space-y-6">
           <div>
             <h1 className="text-4xl font-semibold tracking-tight">
-              Your calendar. Your clients.
+              Your calendar. Your schedule.
             </h1>
             <p className="mt-3 max-w-md text-base text-primary-foreground/85">
               Sign in to manage your schedule, share a request link, sync Google
-              Calendar, and use the AI assistant — each account is separate.
+              Calendar, and use the AI assistant.
             </p>
           </div>
 
@@ -91,7 +91,7 @@ export function SignInForm({ nextPath, error }: SignInFormProps) {
             {[
               "Your own dashboard and shareable booking link",
               "Google Calendar sync and AI scheduling help",
-              "Clients request time without needing your login",
+              "Others can request time without needing your login",
             ].map((item) => (
               <li key={item} className="flex items-start gap-2">
                 <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
@@ -162,8 +162,8 @@ export function SignInForm({ nextPath, error }: SignInFormProps) {
           </div>
 
           <p className="text-center text-xs text-muted-foreground lg:text-left">
-            First sign-in creates your provider account. Client accounts are
-            created when someone submits a request using your share link.
+            First sign-in creates your account. People who submit via your share
+            link are linked to you automatically when they request time.
           </p>
         </div>
       </section>

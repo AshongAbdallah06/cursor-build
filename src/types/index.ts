@@ -1,5 +1,3 @@
-export type UserRole = "PROVIDER" | "CLIENT";
-
 export type TaskStatus =
   | "PENDING"
   | "ACCEPTED"
@@ -17,7 +15,6 @@ export type NotificationType =
 export interface User {
   id: string;
   email: string;
-  role: UserRole;
   fullName: string;
   createdAt: Date;
   updatedAt: Date;

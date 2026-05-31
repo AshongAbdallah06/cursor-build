@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
-import { CalendarClock, Pencil, Trash2, User } from "lucide-react";
-import type { BusySlot, Task, TaskPriority, TaskStatus } from "@/types";
+import { Pencil, Trash2, User } from "lucide-react";
+import type { Task, TaskPriority, TaskStatus } from "@/types";
 import { useTasks } from "@/components/providers/tasks-provider";
 import { useUser } from "@/components/providers/user-provider";
 import {
@@ -11,6 +11,12 @@ import {
   TASK_STATUS_COLORS,
   TASK_STATUS_LABELS,
 } from "@/lib/constants";
+import {
+  canManageTask,
+  isIncomingRequest,
+  isOutgoingRequest,
+  isPersonalTask,
+} from "@/lib/tasks/permissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +53,6 @@ interface TaskDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   task: Task | null;
-  busySlot: BusySlot | null;
 }
 
 function combineDateAndTime(dateStr: string, timeStr: string): Date {
@@ -58,9 +63,8 @@ export function TaskDetailDialog({
   open,
   onOpenChange,
   task,
-  busySlot,
 }: TaskDetailDialogProps) {
-  const { isProvider } = useUser();
+  const { currentUser } = useUser();
   const { updateTask, deleteTask } = useTasks();
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState({
@@ -87,37 +91,13 @@ export function TaskDetailDialog({
     setIsEditing(false);
   }, [task, open]);
 
-  if (busySlot && !task) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Provider unavailable</DialogTitle>
-            <DialogDescription>
-              This time slot is blocked. The provider has another commitment
-              scheduled and details are not visible to you.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center gap-2 rounded-lg border bg-muted/50 p-3 text-sm">
-            <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 break-words [overflow-wrap:anywhere]">
-              {format(busySlot.startTime, "EEEE, MMMM d, yyyy")}
-              <br />
-              {format(busySlot.startTime, "h:mm a")} –{" "}
-              {format(busySlot.endTime, "h:mm a")}
-            </span>
-          </div>
-          <DialogFooter showCloseButton />
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   if (!task) return null;
 
+  const canManage = canManageTask(currentUser.id, task);
   const statusColors = TASK_STATUS_COLORS[task.status];
 
   const handleStatusChange = (status: TaskStatus) => {
+    if (!canManage) return;
     setForm((prev) => ({ ...prev, status }));
     updateTask(task.id, { status });
   };
@@ -177,7 +157,7 @@ export function TaskDetailDialog({
         </DialogHeader>
 
         <div className="min-w-0 space-y-4 overflow-hidden">
-          {isProvider && (
+          {canManage ? (
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
               <Select
@@ -199,9 +179,7 @@ export function TaskDetailDialog({
                 </SelectContent>
               </Select>
             </div>
-          )}
-
-          {!isProvider && (
+          ) : (
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">
                 Priority: {TASK_PRIORITY_LABELS[task.priority]}
@@ -312,7 +290,7 @@ export function TaskDetailDialog({
                   {task.description}
                 </p>
               )}
-              {isProvider && task.createdBy && (
+              {isIncomingRequest(currentUser.id, task) && task.createdBy && (
                 <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
                   <User className="size-4 shrink-0" />
                   <span className="min-w-0 break-words">
@@ -320,15 +298,26 @@ export function TaskDetailDialog({
                   </span>
                 </div>
               )}
+              {isOutgoingRequest(currentUser.id, task) && task.assignedTo && (
+                <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                  <User className="size-4 shrink-0" />
+                  <span className="min-w-0 break-words">
+                    Assigned to {task.assignedTo.fullName}
+                  </span>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary">
                   {TASK_PRIORITY_LABELS[task.priority]} priority
                 </Badge>
-                {isProvider && task.createdBy?.role === "CLIENT" && (
-                  <Badge variant="outline">Client request</Badge>
-                )}
-                {isProvider && task.createdById === task.assignedToId && (
+                {isPersonalTask(currentUser.id, task) && (
                   <Badge variant="outline">Personal</Badge>
+                )}
+                {isIncomingRequest(currentUser.id, task) && (
+                  <Badge variant="outline">Incoming request</Badge>
+                )}
+                {isOutgoingRequest(currentUser.id, task) && (
+                  <Badge variant="outline">Outgoing request</Badge>
                 )}
               </div>
             </div>
@@ -336,21 +325,21 @@ export function TaskDetailDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:justify-between">
-          {isProvider && !isEditing && (
+          {canManage && !isEditing && (
             <Button variant="destructive" className="shrink-0" onClick={handleDelete}>
               <Trash2 className="size-4" />
               Delete
             </Button>
           )}
           <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
-            {isProvider && isEditing ? (
+            {canManage && isEditing ? (
               <>
                 <Button variant="outline" onClick={() => setIsEditing(false)}>
                   Cancel
                 </Button>
                 <Button onClick={handleSave}>Save changes</Button>
               </>
-            ) : isProvider ? (
+            ) : canManage ? (
               <Button variant="outline" onClick={() => setIsEditing(true)}>
                 <Pencil className="size-4" />
                 Edit details

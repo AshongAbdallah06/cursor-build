@@ -12,7 +12,6 @@ import { Loader2 } from "lucide-react";
 import { useUser } from "@/components/providers/user-provider";
 import { useTasks } from "@/components/providers/tasks-provider";
 import {
-  invalidateGoogleCalendarCache,
   getLastVisibleCalendarRange,
   setLastVisibleCalendarRange,
 } from "@/lib/cache/google-calendar-cache";
@@ -30,28 +29,20 @@ import {
 } from "@/components/calendar/calendar-view-switcher";
 import { TaskDetailDialog } from "@/components/calendar/task-detail-dialog";
 import { GoogleEventDetailDialog } from "@/components/calendar/google-event-detail-dialog";
-import {
-  CalendarAssistantPanel,
-  CalendarAssistantToggle,
-} from "@/components/calendar/calendar-assistant-panel";
 import { useGoogleCalendarEvents, useGoogleIntegrationStatus } from "@/hooks/use-google-calendar";
-import type { BusySlot, GoogleCalendarEvent, Task } from "@/types";
+import type { GoogleCalendarEvent, Task } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import "./fullcalendar.css";
 
 export function CalendarView() {
   const calendarRef = useRef<FullCalendar>(null);
-  const { currentUser, isProvider } = useUser();
-  const { tasks, getTasksForUser, getBusySlotsForClient, loading: tasksLoading, error: tasksError, refreshTasks } = useTasks();
+  const { currentUser } = useUser();
+  const { tasks, getCalendarTasks, loading: tasksLoading, error: tasksError } = useTasks();
   const { status: googleStatus } = useGoogleIntegrationStatus();
-  const [assistantOpen, setAssistantOpen] = useState(false);
   const [currentView, setCurrentView] = useState<CalendarViewId>("dayGridMonth");
   const [eventFilter, setEventFilter] =
     useState<CalendarEventFilterId>("all");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [selectedBusySlot, setSelectedBusySlot] = useState<BusySlot | null>(
-    null,
-  );
   const [selectedGoogleEvent, setSelectedGoogleEvent] =
     useState<GoogleCalendarEvent | null>(null);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
@@ -62,43 +53,25 @@ export function CalendarView() {
   } | null>(() => getLastVisibleCalendarRange());
 
   const visibleTasks = useMemo(
-    () => getTasksForUser(currentUser.id, currentUser.role),
-    [getTasksForUser, currentUser.id, currentUser.role],
-  );
-
-  const busySlots = useMemo(
-    () => (isProvider ? [] : getBusySlotsForClient(currentUser.id)),
-    [isProvider, getBusySlotsForClient, currentUser.id],
+    () => getCalendarTasks(currentUser.id),
+    [getCalendarTasks, currentUser.id],
   );
 
   const {
     events: googleEvents,
-    providerBusyEvents,
     loading: googleLoading,
     error: googleError,
     needsReconnect: googleNeedsReconnect,
-    refresh: refreshGoogleEvents,
   } = useGoogleCalendarEvents({
     timeMin: visibleRange?.start ?? null,
     timeMax: visibleRange?.end ?? null,
-    includeProviderBusy: !isProvider,
+    includeProviderBusy: false,
     enabled: Boolean(googleStatus?.connected && googleStatus?.syncEnabled),
   });
 
-  const mergedGoogleEvents = useMemo(
-    () => [...googleEvents, ...providerBusyEvents],
-    [googleEvents, providerBusyEvents],
-  );
-
   const allEvents = useMemo(
-    () =>
-      buildCalendarEvents(
-        visibleTasks,
-        busySlots,
-        isProvider,
-        mergedGoogleEvents,
-      ),
-    [visibleTasks, busySlots, isProvider, mergedGoogleEvents],
+    () => buildCalendarEvents(visibleTasks, googleEvents, currentUser.id),
+    [visibleTasks, googleEvents, currentUser.id],
   );
 
   const events = useMemo(
@@ -132,15 +105,7 @@ export function CalendarView() {
       return;
     }
 
-    if (meta.kind === "busy" && meta.busySlot) {
-      setSelectedTask(null);
-      setSelectedBusySlot(meta.busySlot);
-      setTaskDialogOpen(true);
-      return;
-    }
-
     if (meta.kind === "task" && meta.task) {
-      setSelectedBusySlot(null);
       setSelectedTask(meta.task);
       setTaskDialogOpen(true);
     }
@@ -150,7 +115,6 @@ export function CalendarView() {
     setTaskDialogOpen(open);
     if (!open) {
       setSelectedTask(null);
-      setSelectedBusySlot(null);
     }
   };
 
@@ -161,38 +125,8 @@ export function CalendarView() {
     }
   };
 
-  const handleCalendarUpdated = () => {
-    invalidateGoogleCalendarCache(currentUser.id);
-    void refreshTasks({ force: true });
-    void refreshGoogleEvents();
-  };
-
-  const handleAssistantToggle = () => {
-    const scrollX = window.scrollX;
-    const scrollY = window.scrollY;
-
-    setAssistantOpen((current) => !current);
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.scrollTo(scrollX, scrollY);
-      });
-    });
-  };
-
   return (
-    <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-      {assistantOpen && (
-        <div className="order-1 w-full xl:order-2 xl:w-[380px] xl:shrink-0">
-          <CalendarAssistantPanel
-            open={assistantOpen}
-            onClose={() => setAssistantOpen(false)}
-            onCalendarUpdated={handleCalendarUpdated}
-          />
-        </div>
-      )}
-
-      <div className="order-2 min-w-0 flex-1 space-y-4 xl:order-1">
+    <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">
           <CalendarEventFilter
@@ -201,15 +135,11 @@ export function CalendarView() {
           />
           <CalendarLegend
             showTasks={eventFilter !== "calendar-event"}
-            showBusy={!isProvider && eventFilter !== "task-request"}
+            showBusy={false}
             showGoogle={eventFilter !== "task-request"}
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <CalendarAssistantToggle
-            open={assistantOpen}
-            onToggle={handleAssistantToggle}
-          />
           <CalendarViewSwitcher value={currentView} onChange={handleViewChange} />
         </div>
       </div>
@@ -225,7 +155,7 @@ export function CalendarView() {
         <p className="text-xs text-amber-700">{tasksError}</p>
       )}
 
-      {googleStatus?.connected && googleLoading && mergedGoogleEvents.length === 0 && (
+      {googleStatus?.connected && googleLoading && googleEvents.length === 0 && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
           Syncing Google Calendar…
@@ -292,7 +222,6 @@ export function CalendarView() {
             ? (tasks.find((t) => t.id === selectedTask.id) ?? selectedTask)
             : null
         }
-        busySlot={selectedBusySlot}
       />
 
       <GoogleEventDetailDialog
@@ -300,7 +229,6 @@ export function CalendarView() {
         onOpenChange={handleGoogleDialogChange}
         event={selectedGoogleEvent}
       />
-      </div>
     </div>
   );
 }

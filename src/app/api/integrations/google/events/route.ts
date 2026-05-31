@@ -2,10 +2,8 @@ import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth/session";
 import {
   fetchGoogleEventsForUser,
-  fetchProviderGoogleBusySlots,
   GoogleCalendarAuthError,
 } from "@/lib/integrations/calendar-integration";
-import { findLinkedProviderForClient } from "@/lib/users/provider-service";
 
 export async function GET(request: Request) {
   const userId = await getSessionUserId();
@@ -16,7 +14,6 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const timeMinRaw = searchParams.get("timeMin");
   const timeMaxRaw = searchParams.get("timeMax");
-  const includeProviderBusy = searchParams.get("includeProviderBusy") === "true";
 
   if (!timeMinRaw || !timeMaxRaw) {
     return NextResponse.json(
@@ -33,20 +30,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const providerId = includeProviderBusy
-      ? await findLinkedProviderForClient(userId)
-      : null;
-
-    const [userEvents, providerBusyEvents] = await Promise.all([
-      fetchGoogleEventsForUser(userId, timeMin, timeMax),
-      providerId
-        ? fetchProviderGoogleBusySlots(providerId, timeMin, timeMax)
-        : Promise.resolve([]),
-    ]);
+    const userEvents = await fetchGoogleEventsForUser(userId, timeMin, timeMax);
 
     return NextResponse.json({
       events: userEvents,
-      providerBusyEvents,
+      providerBusyEvents: [],
     });
   } catch (err) {
     console.error("Failed to fetch Google Calendar events:", err);

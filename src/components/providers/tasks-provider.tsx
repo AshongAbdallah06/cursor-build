@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { BusySlot, Task, TaskPriority, TaskStatus, UserRole } from "@/types";
+import type { Task, TaskPriority, TaskStatus } from "@/types";
 import { useUser } from "@/components/providers/user-provider";
 import { TASKS_STALE_MS } from "@/lib/cache/client-cache";
 import { parseTaskFromJson } from "@/lib/tasks/serialize";
@@ -31,8 +31,9 @@ interface TasksContextValue {
   refreshTasks: (options?: { force?: boolean }) => Promise<void>;
   updateTask: (id: string, updates: UpdateTaskInput) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
-  getTasksForUser: (userId: string, role: UserRole) => Task[];
-  getBusySlotsForClient: (clientId: string) => BusySlot[];
+  getCalendarTasks: (userId: string) => Task[];
+  getIncomingTasks: (userId: string) => Task[];
+  getOutgoingTasks: (userId: string) => Task[];
   getTaskById: (id: string) => Task | undefined;
 }
 
@@ -188,26 +189,27 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     [tasks],
   );
 
-  const getTasksForUser = useCallback(
-    (userId: string, role: UserRole) => {
-      if (role === "PROVIDER") {
-        return tasks.filter((task) => task.assignedToId === userId);
-      }
-      return tasks.filter((task) => task.createdById === userId);
-    },
+  const getCalendarTasks = useCallback(
+    (userId: string) =>
+      tasks.filter(
+        (task) => task.createdById === userId || task.assignedToId === userId,
+      ),
     [tasks],
   );
 
-  const getBusySlotsForClient = useCallback(
-    (clientId: string): BusySlot[] => {
-      return tasks
-        .filter((task) => task.createdById !== clientId)
-        .map((task) => ({
-          id: `busy-${task.id}`,
-          startTime: task.startTime,
-          endTime: task.endTime,
-        }));
-    },
+  const getIncomingTasks = useCallback(
+    (userId: string) =>
+      tasks.filter(
+        (task) => task.assignedToId === userId && task.createdById !== userId,
+      ),
+    [tasks],
+  );
+
+  const getOutgoingTasks = useCallback(
+    (userId: string) =>
+      tasks.filter(
+        (task) => task.createdById === userId && task.assignedToId !== userId,
+      ),
     [tasks],
   );
 
@@ -219,8 +221,9 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       refreshTasks,
       updateTask,
       deleteTask,
-      getTasksForUser,
-      getBusySlotsForClient,
+      getCalendarTasks,
+      getIncomingTasks,
+      getOutgoingTasks,
       getTaskById,
     }),
     [
@@ -230,8 +233,9 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       refreshTasks,
       updateTask,
       deleteTask,
-      getTasksForUser,
-      getBusySlotsForClient,
+      getCalendarTasks,
+      getIncomingTasks,
+      getOutgoingTasks,
       getTaskById,
     ],
   );

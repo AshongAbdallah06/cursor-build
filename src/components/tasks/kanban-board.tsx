@@ -22,6 +22,7 @@ import {
   TASK_STATUS_COLORS,
   TASK_STATUS_LABELS,
 } from "@/lib/constants";
+import { isIncomingRequest } from "@/lib/tasks/permissions";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -46,10 +47,10 @@ function isKanbanColumn(id: string | number): id is TaskStatus {
 
 function KanbanCardContent({
   task,
-  showClient = false,
+  showRequester = false,
 }: {
   task: Task;
-  showClient?: boolean;
+  showRequester?: boolean;
 }) {
   return (
     <>
@@ -65,7 +66,7 @@ function KanbanCardContent({
         <Badge variant="outline" className="text-[10px]">
           {TASK_PRIORITY_LABELS[task.priority]}
         </Badge>
-        {showClient && task.createdBy && task.createdBy.role === "CLIENT" && (
+        {showRequester && task.createdBy && (
           <Badge variant="secondary" className="text-[10px]">
             {task.createdBy.fullName}
           </Badge>
@@ -75,15 +76,27 @@ function KanbanCardContent({
   );
 }
 
-function StaticKanbanCard({ task, showClient }: { task: Task; showClient?: boolean }) {
+function StaticKanbanCard({
+  task,
+  showRequester,
+}: {
+  task: Task;
+  showRequester?: boolean;
+}) {
   return (
     <Card className="shadow-none">
-      <KanbanCardContent task={task} showClient={showClient} />
+      <KanbanCardContent task={task} showRequester={showRequester} />
     </Card>
   );
 }
 
-function DraggableKanbanCard({ task }: { task: Task }) {
+function DraggableKanbanCard({
+  task,
+  userId,
+}: {
+  task: Task;
+  userId: string;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: task.id });
 
@@ -102,7 +115,10 @@ function DraggableKanbanCard({ task }: { task: Task }) {
       {...listeners}
       {...attributes}
     >
-      <KanbanCardContent task={task} showClient />
+      <KanbanCardContent
+        task={task}
+        showRequester={isIncomingRequest(userId, task)}
+      />
     </Card>
   );
 }
@@ -111,10 +127,14 @@ function KanbanColumn({
   status,
   tasks,
   interactive = false,
+  showRequester = false,
+  userId,
 }: {
   status: TaskStatus;
   tasks: Task[];
   interactive?: boolean;
+  showRequester?: boolean;
+  userId?: string;
 }) {
   const colors = TASK_STATUS_COLORS[status];
   const { setNodeRef, isOver } = useDroppable({
@@ -150,9 +170,13 @@ function KanbanColumn({
         ) : (
           tasks.map((task) =>
             interactive ? (
-              <DraggableKanbanCard key={task.id} task={task} />
+              <DraggableKanbanCard key={task.id} task={task} userId={userId ?? ""} />
             ) : (
-              <StaticKanbanCard key={task.id} task={task} showClient />
+              <StaticKanbanCard
+                key={task.id}
+                task={task}
+                showRequester={showRequester}
+              />
             ),
           )
         )}
@@ -161,13 +185,17 @@ function KanbanColumn({
   );
 }
 
-export function KanbanBoard() {
-  const { currentUser, isProvider } = useUser();
-  const { getTasksForUser, updateTask } = useTasks();
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
-
-  const tasks = getTasksForUser(currentUser.id, currentUser.role);
-
+function KanbanGrid({
+  tasks,
+  interactive,
+  showRequester,
+  userId,
+}: {
+  tasks: Task[];
+  interactive: boolean;
+  showRequester?: boolean;
+  userId?: string;
+}) {
   const tasksByStatus = useMemo(
     () =>
       KANBAN_COLUMNS.reduce(
@@ -179,6 +207,32 @@ export function KanbanBoard() {
       ),
     [tasks],
   );
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      {KANBAN_COLUMNS.map((status) => (
+        <KanbanColumn
+          key={status}
+          status={status}
+          tasks={tasksByStatus[status]}
+          interactive={interactive}
+          showRequester={showRequester}
+          userId={userId}
+        />
+      ))}
+    </div>
+  );
+}
+
+function InteractiveKanbanBoard({
+  tasks,
+  userId,
+}: {
+  tasks: Task[];
+  userId: string;
+}) {
+  const { updateTask } = useTasks();
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -208,16 +262,6 @@ export function KanbanBoard() {
     void updateTask(taskId, { status: newStatus });
   };
 
-  if (!isProvider) {
-    return (
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {KANBAN_COLUMNS.map((status) => (
-          <KanbanColumn key={status} status={status} tasks={tasksByStatus[status]} />
-        ))}
-      </div>
-    );
-  }
-
   return (
     <DndContext
       sensors={sensors}
@@ -225,23 +269,69 @@ export function KanbanBoard() {
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveTask(null)}
     >
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {KANBAN_COLUMNS.map((status) => (
-          <KanbanColumn
-            key={status}
-            status={status}
-            tasks={tasksByStatus[status]}
-            interactive
-          />
-        ))}
-      </div>
+      <KanbanGrid tasks={tasks} interactive userId={userId} />
       <DragOverlay dropAnimation={null}>
         {activeTask ? (
           <Card className="cursor-grabbing rotate-1 shadow-lg ring-2 ring-primary/20">
-            <KanbanCardContent task={activeTask} showClient />
+            <KanbanCardContent
+              task={activeTask}
+              showRequester={isIncomingRequest(userId, activeTask)}
+            />
           </Card>
         ) : null}
       </DragOverlay>
     </DndContext>
+  );
+}
+
+export function KanbanBoard() {
+  const { currentUser } = useUser();
+  const { tasks, getOutgoingTasks } = useTasks();
+
+  const manageableTasks = useMemo(
+    () => tasks.filter((task) => task.assignedToId === currentUser.id),
+    [tasks, currentUser.id],
+  );
+
+  const outgoingTasks = useMemo(
+    () => getOutgoingTasks(currentUser.id),
+    [getOutgoingTasks, currentUser.id],
+  );
+
+  if (manageableTasks.length === 0 && outgoingTasks.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+        No tasks yet. Share your request link or use the AI assistant to add
+        items to your calendar.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {manageableTasks.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <h3 className="text-lg font-semibold">On your calendar</h3>
+            <p className="text-sm text-muted-foreground">
+              Drag tasks between columns to update their status.
+            </p>
+          </div>
+          <InteractiveKanbanBoard tasks={manageableTasks} userId={currentUser.id} />
+        </section>
+      )}
+
+      {outgoingTasks.length > 0 && (
+        <section className="space-y-4">
+          <div>
+            <h3 className="text-lg font-semibold">Requests you sent</h3>
+            <p className="text-sm text-muted-foreground">
+              Track requests waiting on someone else&apos;s calendar.
+            </p>
+          </div>
+          <KanbanGrid tasks={outgoingTasks} interactive={false} showRequester />
+        </section>
+      )}
+    </div>
   );
 }

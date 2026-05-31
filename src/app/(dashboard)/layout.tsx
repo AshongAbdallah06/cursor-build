@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import { FloatingAssistant } from "@/components/layout/floating-assistant";
 import { TopBar } from "@/components/layout/top-bar";
+import { AssistantProvider } from "@/components/providers/assistant-provider";
 import { NotificationsProvider } from "@/components/providers/notifications-provider";
 import { TasksProvider } from "@/components/providers/tasks-provider";
 import { UserProvider } from "@/components/providers/user-provider";
@@ -23,15 +25,18 @@ export default async function DashboardLayout({
     <UserProvider>
       <TasksProvider>
         <NotificationsProvider>
-          <SidebarProvider>
-            <AppSidebar />
-            <SidebarInset>
-              <TopBar />
-              <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-                {children}
-              </main>
-            </SidebarInset>
-          </SidebarProvider>
+          <AssistantProvider>
+            <SidebarProvider>
+              <AppSidebar />
+              <SidebarInset>
+                <TopBar />
+                <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
+                  {children}
+                </main>
+                <FloatingAssistant />
+              </SidebarInset>
+            </SidebarProvider>
+          </AssistantProvider>
         </NotificationsProvider>
       </TasksProvider>
     </UserProvider>

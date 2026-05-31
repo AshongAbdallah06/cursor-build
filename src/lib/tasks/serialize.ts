@@ -15,7 +15,6 @@ type PrismaTaskWithRelations = {
   createdBy?: {
     id: string;
     email: string;
-    role: User["role"];
     fullName: string;
     createdAt: Date;
     updatedAt: Date;
@@ -23,7 +22,6 @@ type PrismaTaskWithRelations = {
   assignedTo?: {
     id: string;
     email: string;
-    role: User["role"];
     fullName: string;
     createdAt: Date;
     updatedAt: Date;
@@ -37,7 +35,6 @@ function serializeUser(
   return {
     id: user.id,
     email: user.email,
-    role: user.role,
     fullName: user.fullName,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,

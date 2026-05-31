@@ -1,10 +1,5 @@
-import type { UserRole } from "@/types";
 import type { OAuthProfile } from "@/lib/auth/providers/types";
 import { prisma } from "@/lib/prisma";
-
-function resolveRoleForNewUser(): UserRole {
-  return "PROVIDER";
-}
 
 export async function findOrCreateUserFromOAuth(profile: OAuthProfile) {
   const existingByProvider = await findUserByOAuthProvider(profile);
@@ -41,7 +36,6 @@ export async function findOrCreateUserFromOAuth(profile: OAuthProfile) {
       ...oauthProviderIdUpdate(profile),
       fullName: profile.fullName,
       imageUrl: profile.imageUrl,
-      role: resolveRoleForNewUser(),
     },
   });
 }

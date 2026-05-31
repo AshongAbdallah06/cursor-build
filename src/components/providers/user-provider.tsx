@@ -18,7 +18,6 @@ interface UserContextValue {
   currentUser: User;
   loading: boolean;
   refreshUser: () => Promise<void>;
-  isProvider: boolean;
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
@@ -27,7 +26,6 @@ function parseUser(raw: Record<string, unknown>): User {
   return {
     id: String(raw.id),
     email: String(raw.email),
-    role: raw.role as User["role"],
     fullName: String(raw.fullName),
     createdAt: new Date(String(raw.createdAt)),
     updatedAt: new Date(String(raw.updatedAt)),
@@ -85,7 +83,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
       currentUser,
       loading,
       refreshUser,
-      isProvider: currentUser.role === "PROVIDER",
     };
   }, [currentUser, loading, refreshUser]);
 

@@ -168,13 +168,12 @@ async function handleScheduleEvent(
 
 export function buildAssistantSystemPrompt(input: {
   userName: string;
-  userRole: string;
   now: Date;
   googleConnected: boolean;
 }) {
   const nowLabel = format(input.now, "EEEE, MMMM d, yyyy · h:mm a");
 
-  return `You are CalTask's built-in calendar planning assistant for ${input.userName} (${input.userRole}).
+  return `You are CalTask's built-in calendar planning assistant for ${input.userName}.
 
 Current date and time: ${nowLabel}
 

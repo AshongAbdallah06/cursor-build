@@ -275,18 +275,20 @@ export async function getScheduleContextForUser(
   }
 
   const tasks = await prisma.task.findMany({
-    where:
-      user.role === "PROVIDER"
-        ? {
-            assignedToId: userId,
-            startTime: { lte: timeMax },
-            endTime: { gte: timeMin },
-          }
-        : {
-            createdById: userId,
-            startTime: { lte: timeMax },
-            endTime: { gte: timeMin },
-          },
+    where: {
+      OR: [
+        {
+          assignedToId: userId,
+          startTime: { lte: timeMax },
+          endTime: { gte: timeMin },
+        },
+        {
+          createdById: userId,
+          startTime: { lte: timeMax },
+          endTime: { gte: timeMin },
+        },
+      ],
+    },
     orderBy: { startTime: "asc" },
     select: {
       id: true,

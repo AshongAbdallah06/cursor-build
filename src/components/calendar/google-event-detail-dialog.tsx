@@ -86,6 +86,7 @@ export function GoogleEventDetailDialog({
           {!isBusy && event.htmlLink ? (
             <Button
               variant="outline"
+              nativeButton={false}
               className="max-w-full shrink"
               render={
                 <a
