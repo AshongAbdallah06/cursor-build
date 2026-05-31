@@ -48,12 +48,16 @@ enum CalendarProvider {
 // ---------------------------------------------------------------------------
 
 model User {
-  id        String   @id @default(uuid()) @db.Uuid
-  email     String   @unique
-  role      UserRole
-  fullName  String   @map("full_name")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(uuid()) @db.Uuid
+  email      String   @unique
+  googleId   String?  @unique @map("google_id")
+  githubId   String?  @unique @map("github_id")
+  facebookId String?  @unique @map("facebook_id")
+  imageUrl   String?  @map("image_url")
+  role       UserRole
+  fullName   String   @map("full_name")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   createdTasks           Task[]                @relation("CreatedTasks")
   assignedTasks          Task[]                @relation("AssignedTasks")

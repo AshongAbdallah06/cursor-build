@@ -7,7 +7,6 @@ import { format, isSameDay } from "date-fns";
 import { CalendarCheck, Loader2 } from "lucide-react";
 import { TaskRequestForm } from "@/components/request/task-request-form";
 import { APP_NAME } from "@/lib/constants";
-import { MOCK_USER_IDS } from "@/lib/mock-data";
 import {
   Card,
   CardContent,
@@ -25,14 +24,14 @@ interface ProviderInfo {
 
 export function TaskRequestPageContent() {
   const searchParams = useSearchParams();
-  const providerId =
-    searchParams.get("provider") ??
-    process.env.NEXT_PUBLIC_DEFAULT_PROVIDER_ID ??
-    MOCK_USER_IDS.provider;
-
+  const providerId = searchParams.get("provider");
   const [provider, setProvider] = useState<ProviderInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(Boolean(providerId));
+  const [error, setError] = useState<string | null>(
+    providerId
+      ? null
+      : "This link is missing a provider. Ask the person you want to book with for their share link.",
+  );
   const [submitted, setSubmitted] = useState<{
     title: string;
     startTime: string;
@@ -40,12 +39,16 @@ export function TaskRequestPageContent() {
   } | null>(null);
 
   useEffect(() => {
+    if (!providerId) return;
+
+    const resolvedProviderId = providerId;
+
     async function loadProvider() {
       setLoading(true);
       setError(null);
       try {
         const response = await fetch(
-          `/api/public/task-requests?providerId=${encodeURIComponent(providerId)}`,
+          `/api/public/task-requests?providerId=${encodeURIComponent(resolvedProviderId)}`,
         );
         if (!response.ok) {
           throw new Error("Provider not found");
@@ -79,8 +82,8 @@ export function TaskRequestPageContent() {
           <CardDescription>{error}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Link href="/" className={cn(buttonVariants({ variant: "outline" }))}>
-            Go home
+          <Link href="/login" className={cn(buttonVariants({ variant: "outline" }))}>
+            Sign in to CalTask
           </Link>
         </CardContent>
       </Card>
@@ -141,7 +144,7 @@ export function TaskRequestPageContent() {
 export function TaskRequestPageHeader() {
   return (
     <div className="mb-8 text-center">
-      <Link href="/" className="text-lg font-semibold tracking-tight">
+      <Link href="/login" className="text-lg font-semibold tracking-tight">
         {APP_NAME}
       </Link>
       <p className="mt-1 text-sm text-muted-foreground">

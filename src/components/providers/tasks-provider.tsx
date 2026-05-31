@@ -191,7 +191,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   const getTasksForUser = useCallback(
     (userId: string, role: UserRole) => {
       if (role === "PROVIDER") {
-        return tasks;
+        return tasks.filter((task) => task.assignedToId === userId);
       }
       return tasks.filter((task) => task.createdById === userId);
     },

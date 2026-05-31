@@ -18,6 +18,7 @@ interface GoogleEventsResponse {
   events: GoogleCalendarEvent[];
   providerBusyEvents: GoogleCalendarEvent[];
   error?: string;
+  errorCode?: string;
 }
 
 const DEFAULT_STATUS: GoogleIntegrationStatus = {
@@ -134,6 +135,7 @@ export function useGoogleCalendarEvents(options: {
     () => Boolean(cacheKey && options.enabled !== false && !cachedEntry),
   );
   const [error, setError] = useState<string | null>(null);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
 
   const fetchEvents = useCallback(
@@ -175,6 +177,7 @@ export function useGoogleCalendarEvents(options: {
 
       const fetchPromise = (async () => {
         setError(null);
+        setNeedsReconnect(false);
 
         try {
           const params = new URLSearchParams({
@@ -189,6 +192,9 @@ export function useGoogleCalendarEvents(options: {
           const data = (await response.json()) as GoogleEventsResponse;
 
           if (!response.ok && !data.events) {
+            if (data.errorCode === "reconnect_required") {
+              setNeedsReconnect(true);
+            }
             throw new Error(data.error ?? "Failed to load Google Calendar events");
           }
 
@@ -236,6 +242,7 @@ export function useGoogleCalendarEvents(options: {
     providerBusyEvents,
     loading,
     error,
+    needsReconnect,
     refresh: () => fetchEvents({ force: true }),
   };
 }

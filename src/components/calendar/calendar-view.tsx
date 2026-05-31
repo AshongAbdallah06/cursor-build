@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import type { CalendarApi } from "@fullcalendar/core";
@@ -75,6 +76,7 @@ export function CalendarView() {
     providerBusyEvents,
     loading: googleLoading,
     error: googleError,
+    needsReconnect: googleNeedsReconnect,
     refresh: refreshGoogleEvents,
   } = useGoogleCalendarEvents({
     timeMin: visibleRange?.start ?? null,
@@ -165,6 +167,19 @@ export function CalendarView() {
     void refreshGoogleEvents();
   };
 
+  const handleAssistantToggle = () => {
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+
+    setAssistantOpen((current) => !current);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo(scrollX, scrollY);
+      });
+    });
+  };
+
   return (
     <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
       {assistantOpen && (
@@ -193,7 +208,7 @@ export function CalendarView() {
         <div className="flex flex-wrap items-center gap-2">
           <CalendarAssistantToggle
             open={assistantOpen}
-            onToggle={() => setAssistantOpen((current) => !current)}
+            onToggle={handleAssistantToggle}
           />
           <CalendarViewSwitcher value={currentView} onChange={handleViewChange} />
         </div>
@@ -218,9 +233,18 @@ export function CalendarView() {
       )}
 
       {googleStatus?.connected && googleError && (
-        <p className="text-xs text-amber-700">
-          Google Calendar sync error: {googleError}
-        </p>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p>Google Calendar sync error: {googleError}</p>
+          {googleNeedsReconnect && (
+            <p className="mt-1">
+              Go to{" "}
+              <Link href="/settings" className="font-medium underline underline-offset-4">
+                Settings
+              </Link>{" "}
+              → disconnect Google Calendar → connect again to refresh permissions.
+            </p>
+          )}
+        </div>
       )}
 
       <Card className="overflow-hidden py-0">

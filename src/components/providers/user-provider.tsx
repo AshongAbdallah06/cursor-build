@@ -9,55 +9,89 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@/types";
-import { mockClients, mockProvider, mockUsers } from "@/lib/mock-data";
+import { buildLoginUrl } from "@/lib/auth/route-guards";
+import { DashboardShellSkeleton } from "@/components/layout/dashboard-shell-skeleton";
 
 interface UserContextValue {
   currentUser: User;
-  users: User[];
-  switchUser: (userId: string) => void;
+  loading: boolean;
+  refreshUser: () => Promise<void>;
   isProvider: boolean;
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
 
-async function syncSessionUser(userId: string) {
-  try {
-    await fetch("/api/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-  } catch {
-    // Session sync is best-effort during local development
-  }
+function parseUser(raw: Record<string, unknown>): User {
+  return {
+    id: String(raw.id),
+    email: String(raw.email),
+    role: raw.role as User["role"],
+    fullName: String(raw.fullName),
+    createdAt: new Date(String(raw.createdAt)),
+    updatedAt: new Date(String(raw.updatedAt)),
+  };
 }
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [currentUserId, setCurrentUserId] = useState(mockProvider.id);
+  const router = useRouter();
+  const pathname = usePathname();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const currentUser = useMemo(
-    () => mockUsers.find((u) => u.id === currentUserId) ?? mockProvider,
-    [currentUserId],
-  );
+  const redirectToLogin = useCallback(() => {
+    router.replace(buildLoginUrl(pathname));
+  }, [pathname, router]);
 
-  useEffect(() => {
-    void syncSessionUser(currentUserId);
-  }, [currentUserId]);
+  const refreshUser = useCallback(async () => {
+    const response = await fetch("/api/session");
 
-  const switchUser = useCallback((userId: string) => {
-    setCurrentUserId(userId);
+    if (!response.ok) {
+      throw new Error("Failed to load session");
+    }
+
+    const data = (await response.json()) as {
+      user?: Record<string, unknown> | null;
+    };
+
+    if (!data.user) {
+      await fetch("/api/session", { method: "DELETE" });
+      setCurrentUser(null);
+      return;
+    }
+
+    setCurrentUser(parseUser(data.user));
   }, []);
 
-  const value = useMemo(
-    () => ({
+  useEffect(() => {
+    void refreshUser()
+      .catch(() => setCurrentUser(null))
+      .finally(() => setLoading(false));
+  }, [refreshUser]);
+
+  useEffect(() => {
+    if (!loading && !currentUser) {
+      redirectToLogin();
+    }
+  }, [loading, currentUser, redirectToLogin]);
+
+  const value = useMemo(() => {
+    if (!currentUser) {
+      return null;
+    }
+
+    return {
       currentUser,
-      users: mockUsers,
-      switchUser,
+      loading,
+      refreshUser,
       isProvider: currentUser.role === "PROVIDER",
-    }),
-    [currentUser, switchUser],
-  );
+    };
+  }, [currentUser, loading, refreshUser]);
+
+  if (loading || !value) {
+    return <DashboardShellSkeleton />;
+  }
 
   return (
     <UserContext.Provider value={value}>{children}</UserContext.Provider>
@@ -71,5 +105,3 @@ export function useUser() {
   }
   return context;
 }
-
-export { mockClients, mockProvider };

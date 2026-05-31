@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, ChevronDown, LogOut, Settings, UserCircle } from "lucide-react";
-import { mockClients, mockProvider, useUser } from "@/components/providers/user-provider";
+import { useRouter } from "next/navigation";
+import { Bell, ChevronDown, LogOut, Settings } from "lucide-react";
+import { useUser } from "@/components/providers/user-provider";
 import { useNotifications } from "@/components/providers/notifications-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -31,8 +32,15 @@ function getInitials(name: string) {
 }
 
 export function TopBar() {
-  const { currentUser, switchUser, isProvider } = useUser();
+  const router = useRouter();
+  const { currentUser, isProvider } = useUser();
   const { unreadCount } = useNotifications();
+
+  const handleSignOut = async () => {
+    await fetch("/api/session", { method: "DELETE" });
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
@@ -101,30 +109,11 @@ export function TopBar() {
                 </DropdownMenuLabel>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="text-xs text-muted-foreground">
-                  Switch view (dev)
-                </DropdownMenuLabel>
-                <DropdownMenuItem onClick={() => switchUser(mockProvider.id)}>
-                  <UserCircle className="size-4" />
-                  {mockProvider.fullName} (Provider)
-                </DropdownMenuItem>
-                {mockClients.map((client) => (
-                  <DropdownMenuItem
-                    key={client.id}
-                    onClick={() => switchUser(client.id)}
-                  >
-                    <UserCircle className="size-4" />
-                    {client.fullName} (Client)
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
               <DropdownMenuItem render={<Link href="/settings" />}>
                 <Settings className="size-4" />
                 Settings
               </DropdownMenuItem>
-              <DropdownMenuItem disabled>
+              <DropdownMenuItem onClick={() => void handleSignOut()}>
                 <LogOut className="size-4" />
                 Sign out
               </DropdownMenuItem>

@@ -1,7 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { MOCK_USER_IDS } from "@/lib/mock-data";
 import { sendTaskRequestEmail } from "@/lib/email/task-request-email";
 import { serializeTask } from "@/lib/tasks/serialize";
+import {
+  assertProviderExists,
+  assertTaskAssignedToProvider,
+  resolveProviderForClient,
+} from "@/lib/users/provider-service";
 import {
   tasksOverlap,
   validateTaskTimes,
@@ -59,10 +63,6 @@ export async function getProviderPublicProfile(providerId: string) {
     id: user.id,
     fullName: user.fullName,
   };
-}
-
-export async function getDefaultProviderId(): Promise<string> {
-  return process.env.DEFAULT_PROVIDER_ID ?? MOCK_USER_IDS.provider;
 }
 
 async function assertNoScheduleConflict(
@@ -195,7 +195,9 @@ export async function createAssistantSchedule(
   }
 
   const providerId =
-    user.role === "PROVIDER" ? user.id : await getDefaultProviderId();
+    user.role === "PROVIDER" ? user.id : await resolveProviderForClient(user.id);
+
+  await assertProviderExists(providerId);
 
   await assertNoScheduleConflict(
     providerId,
@@ -234,7 +236,10 @@ export async function listTasksForUser(userId: string) {
   const user = await getSessionUser(userId);
 
   const tasks = await prisma.task.findMany({
-    where: user.role === "PROVIDER" ? {} : { createdById: userId },
+    where:
+      user.role === "PROVIDER"
+        ? { assignedToId: userId }
+        : { createdById: userId },
     include: taskInclude,
     orderBy: { startTime: "asc" },
   });
@@ -257,6 +262,8 @@ export async function updateTaskForUser(
   if (user.role !== "PROVIDER") {
     throw new Error("Only the provider can update tasks");
   }
+
+  await assertTaskAssignedToProvider(user.id, existing.assignedToId);
 
   const startTime = data.startTime ?? existing.startTime;
   const endTime = data.endTime ?? existing.endTime;
@@ -302,6 +309,8 @@ export async function deleteTaskForUser(userId: string, taskId: string) {
   if (user.role !== "PROVIDER") {
     throw new Error("Only the provider can delete tasks");
   }
+
+  await assertTaskAssignedToProvider(user.id, existing.assignedToId);
 
   await prisma.task.delete({ where: { id: taskId } });
 }

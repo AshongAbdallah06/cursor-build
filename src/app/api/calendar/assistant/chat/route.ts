@@ -3,6 +3,7 @@ import { runCalendarAssistantChat } from "@/lib/ai/calendar-assistant";
 import { isGeminiConfigured } from "@/lib/ai/gemini-client";
 import type { AssistantChatMessage } from "@/lib/ai/types";
 import { getSessionUserId } from "@/lib/auth/session";
+import { formatApiError } from "@/lib/errors/format-api-error";
 
 export async function POST(request: Request) {
   const userId = await getSessionUserId();
@@ -43,8 +44,12 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (err) {
     console.error("Calendar assistant chat failed:", err);
-    const message =
-      err instanceof Error ? err.message : "Failed to process assistant request";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const message = formatApiError(
+      err,
+      "The assistant could not respond right now. Please try again.",
+    );
+    const status =
+      message.includes("Gemini") || message.includes("configured") ? 503 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

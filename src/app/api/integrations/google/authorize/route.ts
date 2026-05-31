@@ -15,7 +15,7 @@ export async function GET() {
   const userId = await getSessionUserId();
   if (!userId) {
     return NextResponse.json(
-      { error: "No active session. Switch user in Settings first." },
+      { error: "No active session. Sign in first." },
       { status: 401 },
     );
   }

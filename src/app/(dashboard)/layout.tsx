@@ -1,15 +1,24 @@
+import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { NotificationsProvider } from "@/components/providers/notifications-provider";
 import { TasksProvider } from "@/components/providers/tasks-provider";
 import { UserProvider } from "@/components/providers/user-provider";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { getSessionUserId } from "@/lib/auth/session";
+import { buildLoginUrl } from "@/lib/auth/route-guards";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const userId = await getSessionUserId();
+
+  if (!userId) {
+    redirect(buildLoginUrl("/calendar"));
+  }
+
   return (
     <UserProvider>
       <TasksProvider>

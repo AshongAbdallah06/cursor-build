@@ -2,12 +2,6 @@ import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
-import {
-  MOCK_USER_IDS,
-  mockNotifications,
-  mockTasks,
-  mockUsers,
-} from "../src/lib/mock-data";
 
 function createPrismaClient() {
   const url = process.env.DATABASE_URL;
@@ -28,65 +22,14 @@ function createPrismaClient() {
 const prisma = createPrismaClient();
 
 async function main() {
-  console.log("Seeding database...");
-
-  await prisma.notification.deleteMany();
-  await prisma.task.deleteMany();
-  await prisma.user.deleteMany();
-
-  for (const user of mockUsers) {
-    await prisma.user.create({
-      data: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        fullName: user.fullName,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-      },
-    });
-  }
-
-  for (const task of mockTasks) {
-    await prisma.task.create({
-      data: {
-        id: task.id,
-        title: task.title,
-        description: task.description,
-        startTime: task.startTime,
-        endTime: task.endTime,
-        createdById: task.createdById,
-        assignedToId: task.assignedToId,
-        status: task.status,
-        priority: task.priority,
-        createdAt: task.createdAt,
-        updatedAt: task.updatedAt,
-      },
-    });
-  }
-
-  for (const notification of mockNotifications) {
-    await prisma.notification.create({
-      data: {
-        id: notification.id,
-        userId: notification.userId,
-        message: notification.message,
-        type: notification.type,
-        isRead: notification.isRead,
-        createdAt: notification.createdAt,
-      },
-    });
-  }
-
-  console.log(`Seeded ${mockUsers.length} users`);
-  console.log(`Seeded ${mockTasks.length} tasks`);
-  console.log(`Seeded ${mockNotifications.length} notifications`);
-  console.log(`Provider ID: ${MOCK_USER_IDS.provider}`);
+  const userCount = await prisma.user.count();
+  console.log(`Database ready (${userCount} user${userCount === 1 ? "" : "s"}).`);
+  console.log("Sign in via OAuth to create accounts. No mock data is seeded.");
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
+  .catch((error) => {
+    console.error(error);
     process.exit(1);
   })
   .finally(async () => {

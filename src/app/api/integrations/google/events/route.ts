@@ -3,7 +3,9 @@ import { getSessionUserId } from "@/lib/auth/session";
 import {
   fetchGoogleEventsForUser,
   fetchProviderGoogleBusySlots,
+  GoogleCalendarAuthError,
 } from "@/lib/integrations/calendar-integration";
+import { findLinkedProviderForClient } from "@/lib/users/provider-service";
 
 export async function GET(request: Request) {
   const userId = await getSessionUserId();
@@ -31,10 +33,14 @@ export async function GET(request: Request) {
   }
 
   try {
+    const providerId = includeProviderBusy
+      ? await findLinkedProviderForClient(userId)
+      : null;
+
     const [userEvents, providerBusyEvents] = await Promise.all([
       fetchGoogleEventsForUser(userId, timeMin, timeMax),
-      includeProviderBusy
-        ? fetchProviderGoogleBusySlots(timeMin, timeMax)
+      providerId
+        ? fetchProviderGoogleBusySlots(providerId, timeMin, timeMax)
         : Promise.resolve([]),
     ]);
 
@@ -44,6 +50,19 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     console.error("Failed to fetch Google Calendar events:", err);
+
+    if (err instanceof GoogleCalendarAuthError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          errorCode: "reconnect_required",
+          events: [],
+          providerBusyEvents: [],
+        },
+        { status: 401 },
+      );
+    }
+
     return NextResponse.json(
       { error: "Failed to fetch Google Calendar events", events: [], providerBusyEvents: [] },
       { status: 502 },

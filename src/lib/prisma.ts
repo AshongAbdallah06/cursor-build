@@ -18,7 +18,12 @@ function createPrismaClient() {
     return new PrismaClient({ accelerateUrl: url });
   }
 
-  const pool = new pg.Pool({ connectionString: url });
+  const pool = new pg.Pool({
+    connectionString: url,
+    connectionTimeoutMillis: 10_000,
+    idleTimeoutMillis: 30_000,
+    max: 10,
+  });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
 }

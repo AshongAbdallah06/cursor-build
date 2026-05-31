@@ -40,10 +40,31 @@ interface GeminiGenerateResponse {
 }
 
 function getGeminiConfig() {
+  const apiKey = process.env.GEMINI_API_KEY?.trim()
+
   return {
-    apiKey: process.env.GEMINI_API_KEY?.trim(),
+    apiKey,
     model: process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash",
   };
+}
+
+function formatGeminiError(status: number, message: string | undefined): string {
+  const normalized = message?.toLowerCase() ?? "";
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    normalized.includes("invalid authentication credentials") ||
+    normalized.includes("api key not valid")
+  ) {
+    return "Invalid Gemini API key. Create one at https://aistudio.google.com/apikey and set GEMINI_API_KEY in .env (no AQ. prefix).";
+  }
+
+  if (status === 404 || normalized.includes("not found")) {
+    return `Gemini model not found. Set GEMINI_MODEL to a valid model such as gemini-2.0-flash.`;
+  }
+
+  return message ?? "Gemini request failed";
 }
 
 export function isGeminiConfigured(): boolean {
@@ -80,7 +101,7 @@ export async function generateGeminiContent(
   const data = (await response.json()) as GeminiGenerateResponse;
 
   if (!response.ok) {
-    throw new Error(data.error?.message ?? "Gemini request failed");
+    throw new Error(formatGeminiError(response.status, data.error?.message));
   }
 
   const content = data.candidates?.[0]?.content;

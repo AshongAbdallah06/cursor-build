@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Bot, Loader2, Send, Sparkles, X } from "lucide-react";
 import type { AssistantChatMessage } from "@/lib/ai/types";
+import { AssistantMessageContent } from "@/components/calendar/assistant-message-content";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 const WELCOME_MESSAGE: AssistantChatMessage = {
@@ -31,11 +31,32 @@ export function CalendarAssistantPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sending]);
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const top = container.scrollHeight - container.clientHeight;
+    if (top <= 0) return;
+
+    if (behavior === "auto") {
+      container.scrollTop = top;
+      return;
+    }
+
+    container.scrollTo({ top, behavior });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open || (messages.length <= 1 && !sending)) return;
+
+    const frame = requestAnimationFrame(() => {
+      scrollToBottom("smooth");
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [messages, sending, open, scrollToBottom]);
 
   const handleSend = async () => {
     const trimmed = input.trim();
@@ -120,7 +141,10 @@ export function CalendarAssistantPanel({
         </Button>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1 px-4 py-3">
+      <div
+        ref={scrollContainerRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain [overflow-anchor:none] px-4 py-3"
+      >
         <div className="space-y-3 pr-2">
           {messages.map((message, index) => (
             <div
@@ -132,7 +156,11 @@ export function CalendarAssistantPanel({
                   : "bg-muted text-foreground",
               )}
             >
-              {message.content}
+              {message.role === "assistant" ? (
+                <AssistantMessageContent content={message.content} />
+              ) : (
+                message.content
+              )}
             </div>
           ))}
 
@@ -142,14 +170,12 @@ export function CalendarAssistantPanel({
               Thinking…
             </div>
           )}
-
-          <div ref={bottomRef} />
         </div>
-      </ScrollArea>
+      </div>
 
-      <div className="space-y-2 border-t p-4">
+      <div className="min-w-0 space-y-2 border-t p-4">
         {error && (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          <p className="max-w-full rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800 break-words [overflow-wrap:anywhere]">
             {error}
           </p>
         )}

@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import {
-  createAuthenticatedCalendarClient,
-  insertGoogleCalendarEvent,
-  listGoogleCalendarEvents,
+  GoogleCalendarAuthError,
+  insertGoogleCalendarEventWithAuth,
+  listGoogleCalendarEventsWithAuth,
 } from "@/lib/google/client";
 import type { GoogleCalendarEvent } from "@/types";
-import { MOCK_USER_IDS } from "@/lib/mock-data";
+
+export { GoogleCalendarAuthError };
 
 interface TokenUpdate {
   accessToken: string;
@@ -166,6 +167,18 @@ async function getIntegrationForUser(userId: string) {
   });
 }
 
+function buildCalendarCredentials(
+  integration: NonNullable<Awaited<ReturnType<typeof getIntegrationForUser>>>,
+) {
+  return {
+    accessToken: integration.accessToken,
+    refreshToken: integration.refreshToken,
+    tokenExpiry: integration.tokenExpiry,
+    onTokenRefresh: (tokens: TokenUpdate) =>
+      refreshIntegrationTokens(integration.id, tokens),
+  };
+}
+
 export async function fetchGoogleEventsForUser(
   userId: string,
   timeMin: Date,
@@ -177,31 +190,34 @@ export async function fetchGoogleEventsForUser(
     return [];
   }
 
-  const calendar = createAuthenticatedCalendarClient({
-    accessToken: integration.accessToken,
-    refreshToken: integration.refreshToken,
-    tokenExpiry: integration.tokenExpiry,
-    onTokenRefresh: (tokens) =>
-      refreshIntegrationTokens(integration.id, tokens),
-  });
+  try {
+    const items = await listGoogleCalendarEventsWithAuth(
+      buildCalendarCredentials(integration),
+      {
+        calendarId: integration.calendarId,
+        timeMin,
+        timeMax,
+      },
+    );
 
-  const items = await listGoogleCalendarEvents(calendar, {
-    calendarId: integration.calendarId,
-    timeMin,
-    timeMax,
-  });
-
-  return items
-    .map((event) => mapGoogleEvent(event, options))
-    .filter((event): event is GoogleCalendarEvent => event !== null);
+    return items
+      .map((event) => mapGoogleEvent(event, options))
+      .filter((event): event is GoogleCalendarEvent => event !== null);
+  } catch (error) {
+    if (error instanceof GoogleCalendarAuthError) {
+      throw error;
+    }
+    throw error;
+  }
 }
 
 /** Provider Google events shown as anonymous busy blocks to clients */
 export async function fetchProviderGoogleBusySlots(
+  providerId: string,
   timeMin: Date,
   timeMax: Date,
 ): Promise<GoogleCalendarEvent[]> {
-  return fetchGoogleEventsForUser(MOCK_USER_IDS.provider, timeMin, timeMax, {
+  return fetchGoogleEventsForUser(providerId, timeMin, timeMax, {
     hideDetails: true,
   });
 }
@@ -222,21 +238,16 @@ export async function createGoogleEventForUser(
     );
   }
 
-  const calendar = createAuthenticatedCalendarClient({
-    accessToken: integration.accessToken,
-    refreshToken: integration.refreshToken,
-    tokenExpiry: integration.tokenExpiry,
-    onTokenRefresh: (tokens) =>
-      refreshIntegrationTokens(integration.id, tokens),
-  });
-
-  const created = await insertGoogleCalendarEvent(calendar, {
-    calendarId: integration.calendarId,
-    summary: input.title,
-    description: input.description,
-    startTime: input.startTime,
-    endTime: input.endTime,
-  });
+  const created = await insertGoogleCalendarEventWithAuth(
+    buildCalendarCredentials(integration),
+    {
+      calendarId: integration.calendarId,
+      summary: input.title,
+      description: input.description,
+      startTime: input.startTime,
+      endTime: input.endTime,
+    },
+  );
 
   const mapped = mapGoogleEvent(created);
   if (!mapped) {
@@ -267,6 +278,7 @@ export async function getScheduleContextForUser(
     where:
       user.role === "PROVIDER"
         ? {
+            assignedToId: userId,
             startTime: { lte: timeMax },
             endTime: { gte: timeMin },
           }

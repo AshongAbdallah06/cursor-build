@@ -172,6 +172,10 @@ AUTH_SECRET=your-random-secret`}
           </div>
         ) : status?.connected ? (
           <div className="space-y-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              If calendar sync fails with an authentication error, disconnect and
+              connect again to refresh Google permissions (needed after app updates).
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="default">Connected</Badge>
               {status.calendarEmail && (
