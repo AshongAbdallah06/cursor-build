@@ -59,7 +59,9 @@ function KanbanCardContent({
           {task.title}
         </CardTitle>
         <CardDescription className="text-xs">
-          {format(task.startTime, "MMM d · h:mm a")}
+          {task.startTime && task.endTime
+            ? format(task.startTime, "MMM d · h:mm a")
+            : "No schedule set"}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap gap-1 p-3 pt-0">

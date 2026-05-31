@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Loader2, Send } from "lucide-react";
+import { ChevronDown, Check, Loader2, Send } from "lucide-react";
 import type { Task, TaskPriority } from "@/types";
 import { TASK_PRIORITY_LABELS } from "@/lib/constants";
 import { combineDateAndTime } from "@/lib/tasks/validation";
@@ -35,6 +35,7 @@ interface TaskRequestFormProps {
 export function TaskRequestForm({ provider, onSuccess }: TaskRequestFormProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSchedule, setShowSchedule] = useState(false);
   const [form, setForm] = useState({
     clientName: "",
     clientEmail: "",
@@ -51,6 +52,7 @@ export function TaskRequestForm({ provider, onSuccess }: TaskRequestFormProps) {
   const effectiveEndDate = form.sameDay ? form.startDate : form.endDate;
 
   const schedulePreview = useMemo(() => {
+    if (!showSchedule) return null;
     if (!form.startDate || !form.startTime || !effectiveEndDate || !form.endTime) {
       return null;
     }
@@ -63,7 +65,7 @@ export function TaskRequestForm({ provider, onSuccess }: TaskRequestFormProps) {
     } catch {
       return null;
     }
-  }, [form.startDate, form.startTime, effectiveEndDate, form.endTime]);
+  }, [showSchedule, form.startDate, form.startTime, effectiveEndDate, form.endTime]);
 
   const handleSameDayChange = (sameDay: boolean) => {
     setForm((prev) => ({
@@ -85,56 +87,60 @@ export function TaskRequestForm({ provider, onSuccess }: TaskRequestFormProps) {
     event.preventDefault();
     setError(null);
 
-    if (!form.startDate || !form.startTime || !form.endTime) {
-      setError("Please fill in the start date, start time, and end time.");
-      return;
-    }
+    if (showSchedule) {
+      if (!form.startDate || !form.startTime || !form.endTime) {
+        setError("Please fill in the start date, start time, and end time.");
+        return;
+      }
 
-    if (!form.sameDay && !form.endDate) {
-      setError("Please select a deadline date.");
-      return;
-    }
+      if (!form.sameDay && !form.endDate) {
+        setError("Please select a deadline date.");
+        return;
+      }
 
-    const endDate = form.sameDay ? form.startDate : form.endDate;
+      const endDate = form.sameDay ? form.startDate : form.endDate;
 
-    let start: Date;
-    let end: Date;
-
-    try {
-      start = combineDateAndTime(form.startDate, form.startTime);
-      end = combineDateAndTime(endDate, form.endTime);
-    } catch {
-      setError("Invalid date or time.");
-      return;
-    }
-
-    if (end <= start) {
-      setError(
-        form.sameDay
-          ? "End time must be after start time."
-          : "Deadline must be after the start date and time.",
-      );
-      return;
+      try {
+        const start = combineDateAndTime(form.startDate, form.startTime);
+        const end = combineDateAndTime(endDate, form.endTime);
+        if (end <= start) {
+          setError(
+            form.sameDay
+              ? "End time must be after start time."
+              : "Deadline must be after the start date and time.",
+          );
+          return;
+        }
+      } catch {
+        setError("Invalid date or time.");
+        return;
+      }
     }
 
     setSubmitting(true);
 
     try {
+      const payload: Record<string, unknown> = {
+        providerId: provider.id,
+        clientName: form.clientName,
+        clientEmail: form.clientEmail,
+        title: form.title,
+        description: form.description,
+        priority: form.priority,
+      };
+
+      if (showSchedule) {
+        payload.startDate = form.startDate;
+        payload.startTime = form.startTime;
+        payload.endDate = form.sameDay ? form.startDate : form.endDate;
+        payload.endTime = form.endTime;
+        payload.sameDay = form.sameDay;
+      }
+
       const response = await fetch("/api/public/task-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          providerId: provider.id,
-          clientName: form.clientName,
-          clientEmail: form.clientEmail,
-          title: form.title,
-          description: form.description,
-          startDate: form.startDate,
-          startTime: form.startTime,
-          endDate,
-          endTime: form.endTime,
-          priority: form.priority,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = (await response.json()) as { task?: Task; error?: string };
@@ -158,8 +164,8 @@ export function TaskRequestForm({ provider, onSuccess }: TaskRequestFormProps) {
       <CardHeader>
         <CardTitle>Request time with {provider.fullName}</CardTitle>
         <CardDescription>
-          Choose when the task starts and when it should be completed by. Your
-          request will appear on their calendar as pending until they accept it.
+          Share what you need. Add a schedule only if you have specific dates in
+          mind — otherwise leave it open and they can follow up with you.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -216,108 +222,119 @@ export function TaskRequestForm({ provider, onSuccess }: TaskRequestFormProps) {
             />
           </div>
 
-          <div className="space-y-3 rounded-lg border p-4">
-            <div>
-              <p className="text-sm font-medium">Schedule</p>
-              <p className="text-xs text-muted-foreground">
-                Set a start date and a deadline. Use same day when everything
-                happens in one day.
-              </p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="startDate">Start date</Label>
-                <Input
-                  id="startDate"
-                  type="date"
-                  required
-                  value={form.startDate}
-                  onChange={(e) => handleStartDateChange(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="startTime">Start time</Label>
-                <Input
-                  id="startTime"
-                  type="time"
-                  required
-                  value={form.startTime}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, startTime: e.target.value }))
-                  }
-                />
-              </div>
-            </div>
-
+          <div className="rounded-lg border">
             <button
               type="button"
-              role="checkbox"
-              aria-checked={form.sameDay}
-              onClick={() => handleSameDayChange(!form.sameDay)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                form.sameDay
-                  ? "border-primary/40 bg-primary/5"
-                  : "hover:bg-muted/50",
-              )}
+              onClick={() => setShowSchedule((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-muted/50"
             >
-              <span
+              <div>
+                <p className="font-medium">Add schedule (optional)</p>
+                <p className="text-xs text-muted-foreground">
+                  Start date, deadline, and times
+                </p>
+              </div>
+              <ChevronDown
                 className={cn(
-                  "flex size-5 shrink-0 items-center justify-center rounded border",
-                  form.sameDay
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-muted-foreground/30 bg-background",
+                  "size-4 shrink-0 text-muted-foreground transition-transform",
+                  showSchedule && "rotate-180",
                 )}
-              >
-                {form.sameDay ? <Check className="size-3.5" /> : null}
-              </span>
-              <span>
-                <span className="font-medium">Same day</span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Deadline is on the start date — only pick an end time
-                </span>
-              </span>
+              />
             </button>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="endDate">Deadline date</Label>
-                <Input
-                  id="endDate"
-                  type="date"
-                  required={!form.sameDay}
-                  disabled={form.sameDay}
-                  min={form.startDate || undefined}
-                  value={effectiveEndDate}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, endDate: e.target.value }))
-                  }
-                  className={form.sameDay ? "opacity-60" : undefined}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="endTime">
-                  {form.sameDay ? "End time" : "Deadline time"}
-                </Label>
-                <Input
-                  id="endTime"
-                  type="time"
-                  required
-                  value={form.endTime}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, endTime: e.target.value }))
-                  }
-                />
-              </div>
-            </div>
+            {showSchedule && (
+              <div className="space-y-3 border-t p-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="startDate">Start date</Label>
+                    <Input
+                      id="startDate"
+                      type="date"
+                      value={form.startDate}
+                      onChange={(e) => handleStartDateChange(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="startTime">Start time</Label>
+                    <Input
+                      id="startTime"
+                      type="time"
+                      value={form.startTime}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, startTime: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
 
-            {schedulePreview && (
-              <p className="text-xs text-muted-foreground">
-                {form.sameDay
-                  ? "Completing same day between start and end time."
-                  : "Task spans multiple days from start to deadline."}
-              </p>
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={form.sameDay}
+                  onClick={() => handleSameDayChange(!form.sameDay)}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                    form.sameDay
+                      ? "border-primary/40 bg-primary/5"
+                      : "hover:bg-muted/50",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-5 shrink-0 items-center justify-center rounded border",
+                      form.sameDay
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-muted-foreground/30 bg-background",
+                    )}
+                  >
+                    {form.sameDay ? <Check className="size-3.5" /> : null}
+                  </span>
+                  <span>
+                    <span className="font-medium">Same day</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Deadline is on the start date — only pick an end time
+                    </span>
+                  </span>
+                </button>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="endDate">Deadline date</Label>
+                    <Input
+                      id="endDate"
+                      type="date"
+                      disabled={form.sameDay}
+                      min={form.startDate || undefined}
+                      value={effectiveEndDate}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, endDate: e.target.value }))
+                      }
+                      className={form.sameDay ? "opacity-60" : undefined}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="endTime">
+                      {form.sameDay ? "End time" : "Deadline time"}
+                    </Label>
+                    <Input
+                      id="endTime"
+                      type="time"
+                      value={form.endTime}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, endTime: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                {schedulePreview && (
+                  <p className="text-xs text-muted-foreground">
+                    {form.sameDay
+                      ? "Completing same day between start and end time."
+                      : "Task spans multiple days from start to deadline."}
+                  </p>
+                )}
+              </div>
             )}
           </div>
 

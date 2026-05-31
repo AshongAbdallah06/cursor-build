@@ -12,7 +12,12 @@ import {
 } from "react";
 import type { Task, TaskPriority, TaskStatus } from "@/types";
 import { useUser } from "@/components/providers/user-provider";
-import { TASKS_STALE_MS } from "@/lib/cache/client-cache";
+import {
+  getCachedTasks,
+  invalidateTasksCache,
+  isTasksFresh,
+  setCachedTasks,
+} from "@/lib/cache/dashboard-cache";
 import { parseTaskFromJson } from "@/lib/tasks/serialize";
 
 interface UpdateTaskInput {
@@ -41,69 +46,78 @@ const TasksContext = createContext<TasksContextValue | null>(null);
 
 export function TasksProvider({ children }: { children: ReactNode }) {
   const { currentUser } = useUser();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedEntry = getCachedTasks(currentUser.id);
+  const [tasks, setTasks] = useState<Task[]>(() => cachedEntry?.data ?? []);
+  const [loading, setLoading] = useState(() => !cachedEntry);
   const [error, setError] = useState<string | null>(null);
-  const lastFetchedAtRef = useRef(0);
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(Boolean(cachedEntry));
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
 
-  const refreshTasks = useCallback(async (options?: { force?: boolean }) => {
-    const force = options?.force ?? false;
-    const isFresh =
-      hasLoadedRef.current &&
-      Date.now() - lastFetchedAtRef.current < TASKS_STALE_MS;
+  const refreshTasks = useCallback(
+    async (options?: { force?: boolean }) => {
+      const force = options?.force ?? false;
 
-    if (!force && isFresh) {
-      return;
-    }
-
-    if (fetchInFlightRef.current) {
-      await fetchInFlightRef.current;
-      return;
-    }
-
-    if (!hasLoadedRef.current) {
-      setLoading(true);
-    }
-
-    setError(null);
-
-    const fetchPromise = (async () => {
-      try {
-        const response = await fetch("/api/tasks", { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error("Failed to load tasks from database");
+      if (!force && isTasksFresh(currentUser.id)) {
+        const entry = getCachedTasks(currentUser.id);
+        if (entry) {
+          setTasks(entry.data);
+          setLoading(false);
+          hasLoadedRef.current = true;
+          return;
         }
-
-        const data = (await response.json()) as { tasks: Task[] };
-        setTasks(data.tasks.map(parseTaskFromJson));
-        lastFetchedAtRef.current = Date.now();
-        hasLoadedRef.current = true;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load tasks");
-        if (!hasLoadedRef.current) {
-          setTasks([]);
-        }
-      } finally {
-        setLoading(false);
-        fetchInFlightRef.current = null;
       }
-    })();
 
-    fetchInFlightRef.current = fetchPromise;
-    await fetchPromise;
-  }, []);
+      if (fetchInFlightRef.current) {
+        await fetchInFlightRef.current;
+        return;
+      }
+
+      if (!hasLoadedRef.current) {
+        setLoading(true);
+      }
+
+      setError(null);
+
+      const fetchPromise = (async () => {
+        try {
+          const response = await fetch("/api/tasks", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("Failed to load tasks from database");
+          }
+
+          const data = (await response.json()) as { tasks: Task[] };
+          const parsed = data.tasks.map(parseTaskFromJson);
+          setCachedTasks(currentUser.id, parsed);
+          setTasks(parsed);
+          hasLoadedRef.current = true;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to load tasks");
+          const entry = getCachedTasks(currentUser.id);
+          if (entry) {
+            setTasks(entry.data);
+            hasLoadedRef.current = true;
+          } else if (!hasLoadedRef.current) {
+            setTasks([]);
+          }
+        } finally {
+          setLoading(false);
+          fetchInFlightRef.current = null;
+        }
+      })();
+
+      fetchInFlightRef.current = fetchPromise;
+      await fetchPromise;
+    },
+    [currentUser.id],
+  );
 
   useEffect(() => {
-    hasLoadedRef.current = false;
-    lastFetchedAtRef.current = 0;
-    void refreshTasks({ force: true });
+    hasLoadedRef.current = Boolean(getCachedTasks(currentUser.id));
+    void refreshTasks({ force: !isTasksFresh(currentUser.id) });
   }, [currentUser.id, refreshTasks]);
 
   useEffect(() => {
     const handleRefresh = () => void refreshTasks();
-    const handlePoll = () => void refreshTasks({ force: true });
 
     window.addEventListener("focus", handleRefresh);
     document.addEventListener("visibilitychange", () => {
@@ -112,11 +126,8 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const interval = window.setInterval(handlePoll, 30_000);
-
     return () => {
       window.removeEventListener("focus", handleRefresh);
-      window.clearInterval(interval);
     };
   }, [refreshTasks]);
 
@@ -159,22 +170,27 @@ export function TasksProvider({ children }: { children: ReactNode }) {
 
         const data = (await response.json()) as { task: Task };
         const saved = parseTaskFromJson(data.task);
-        setTasks((current) =>
-          current.map((task) => (task.id === id ? saved : task)),
-        );
-        lastFetchedAtRef.current = Date.now();
+        setTasks((current) => {
+          const next = current.map((task) => (task.id === id ? saved : task));
+          setCachedTasks(currentUser.id, next);
+          return next;
+        });
       } catch {
         setTasks(previous);
         setError("Failed to save task changes");
       }
     },
-    [tasks],
+    [currentUser.id, tasks],
   );
 
   const deleteTask = useCallback(
     async (id: string) => {
       const previous = tasks;
-      setTasks((current) => current.filter((task) => task.id !== id));
+      setTasks((current) => {
+        const next = current.filter((task) => task.id !== id);
+        setCachedTasks(currentUser.id, next);
+        return next;
+      });
 
       try {
         const response = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
@@ -183,16 +199,20 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         setTasks(previous);
+        setCachedTasks(currentUser.id, previous);
         setError("Failed to delete task");
       }
     },
-    [tasks],
+    [currentUser.id, tasks],
   );
 
   const getCalendarTasks = useCallback(
     (userId: string) =>
       tasks.filter(
-        (task) => task.createdById === userId || task.assignedToId === userId,
+        (task) =>
+          (task.createdById === userId || task.assignedToId === userId) &&
+          task.startTime &&
+          task.endTime,
       ),
     [tasks],
   );

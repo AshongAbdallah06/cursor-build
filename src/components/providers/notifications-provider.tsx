@@ -12,7 +12,12 @@ import {
 } from "react";
 import type { Notification } from "@/types";
 import { useUser } from "@/components/providers/user-provider";
-import { TASKS_STALE_MS } from "@/lib/cache/client-cache";
+import {
+  getCachedNotifications,
+  invalidateNotificationsCache,
+  isNotificationsFresh,
+  setCachedNotifications,
+} from "@/lib/cache/dashboard-cache";
 import { parseNotificationFromJson } from "@/lib/notifications/serialize";
 
 interface NotificationsContextValue {
@@ -31,22 +36,27 @@ const NotificationsContext = createContext<NotificationsContextValue | null>(
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { currentUser } = useUser();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedEntry = getCachedNotifications(currentUser.id);
+  const [notifications, setNotifications] = useState<Notification[]>(
+    () => cachedEntry?.data ?? [],
+  );
+  const [loading, setLoading] = useState(() => !cachedEntry);
   const [error, setError] = useState<string | null>(null);
-  const lastFetchedAtRef = useRef(0);
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(Boolean(cachedEntry));
   const fetchInFlightRef = useRef<Promise<void> | null>(null);
 
   const refreshNotifications = useCallback(
     async (options?: { force?: boolean }) => {
       const force = options?.force ?? false;
-      const isFresh =
-        hasLoadedRef.current &&
-        Date.now() - lastFetchedAtRef.current < TASKS_STALE_MS;
 
-      if (!force && isFresh) {
-        return;
+      if (!force && isNotificationsFresh(currentUser.id)) {
+        const entry = getCachedNotifications(currentUser.id);
+        if (entry) {
+          setNotifications(entry.data);
+          setLoading(false);
+          hasLoadedRef.current = true;
+          return;
+        }
       }
 
       if (fetchInFlightRef.current) {
@@ -72,14 +82,19 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           const data = (await response.json()) as {
             notifications: Notification[];
           };
-          setNotifications(data.notifications.map(parseNotificationFromJson));
-          lastFetchedAtRef.current = Date.now();
+          const parsed = data.notifications.map(parseNotificationFromJson);
+          setCachedNotifications(currentUser.id, parsed);
+          setNotifications(parsed);
           hasLoadedRef.current = true;
         } catch (err) {
           setError(
             err instanceof Error ? err.message : "Failed to load notifications",
           );
-          if (!hasLoadedRef.current) {
+          const entry = getCachedNotifications(currentUser.id);
+          if (entry) {
+            setNotifications(entry.data);
+            hasLoadedRef.current = true;
+          } else if (!hasLoadedRef.current) {
             setNotifications([]);
           }
         } finally {
@@ -91,18 +106,16 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       fetchInFlightRef.current = fetchPromise;
       await fetchPromise;
     },
-    [],
+    [currentUser.id],
   );
 
   useEffect(() => {
-    hasLoadedRef.current = false;
-    lastFetchedAtRef.current = 0;
-    void refreshNotifications({ force: true });
+    hasLoadedRef.current = Boolean(getCachedNotifications(currentUser.id));
+    void refreshNotifications({ force: !isNotificationsFresh(currentUser.id) });
   }, [currentUser.id, refreshNotifications]);
 
   useEffect(() => {
     const handleRefresh = () => void refreshNotifications();
-    const handlePoll = () => void refreshNotifications({ force: true });
 
     window.addEventListener("focus", handleRefresh);
     document.addEventListener("visibilitychange", () => {
@@ -111,23 +124,22 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const interval = window.setInterval(handlePoll, 30_000);
-
     return () => {
       window.removeEventListener("focus", handleRefresh);
-      window.clearInterval(interval);
     };
   }, [refreshNotifications]);
 
   const markAsRead = useCallback(async (id: string) => {
     const previous = notifications;
-    setNotifications((current) =>
-      current.map((notification) =>
+    setNotifications((current) => {
+      const next = current.map((notification) =>
         notification.id === id
           ? { ...notification, isRead: true }
           : notification,
-      ),
-    );
+      );
+      setCachedNotifications(currentUser.id, next);
+      return next;
+    });
 
     try {
       const response = await fetch(`/api/notifications/${id}`, {
@@ -139,22 +151,28 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
       const data = (await response.json()) as { notification: Notification };
       const saved = parseNotificationFromJson(data.notification);
-      setNotifications((current) =>
-        current.map((notification) =>
+      setNotifications((current) => {
+        const next = current.map((notification) =>
           notification.id === id ? saved : notification,
-        ),
-      );
+        );
+        setCachedNotifications(currentUser.id, next);
+        return next;
+      });
     } catch {
       setNotifications(previous);
+      setCachedNotifications(currentUser.id, previous);
       setError("Failed to mark notification as read");
     }
-  }, [notifications]);
+  }, [currentUser.id, notifications]);
 
   const markAllAsRead = useCallback(async () => {
     const previous = notifications;
-    setNotifications((current) =>
-      current.map((notification) => ({ ...notification, isRead: true })),
-    );
+    const next = previous.map((notification) => ({
+      ...notification,
+      isRead: true,
+    }));
+    setNotifications(next);
+    setCachedNotifications(currentUser.id, next);
 
     try {
       const response = await fetch("/api/notifications/mark-all-read", {
@@ -165,9 +183,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       setNotifications(previous);
+      setCachedNotifications(currentUser.id, previous);
       setError("Failed to mark all notifications as read");
     }
-  }, [notifications]);
+  }, [currentUser.id, notifications]);
 
   const unreadCount = useMemo(
     () => notifications.filter((notification) => !notification.isRead).length,

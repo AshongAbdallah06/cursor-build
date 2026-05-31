@@ -4,12 +4,13 @@ type PrismaTaskWithRelations = {
   id: string;
   title: string;
   description: string | null;
-  startTime: Date;
-  endTime: Date;
+  startTime: Date | null;
+  endTime: Date | null;
   createdById: string;
   assignedToId: string;
   status: TaskStatus;
   priority: TaskPriority;
+  googleEventId: string | null;
   createdAt: Date;
   updatedAt: Date;
   createdBy?: {
@@ -52,6 +53,7 @@ export function serializeTask(task: PrismaTaskWithRelations): Task {
     assignedToId: task.assignedToId,
     status: task.status,
     priority: task.priority,
+    googleEventId: task.googleEventId,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     createdBy: serializeUser(task.createdBy),
@@ -63,8 +65,8 @@ export function serializeTask(task: PrismaTaskWithRelations): Task {
 export function parseTaskFromJson(task: Task): Task {
   return {
     ...task,
-    startTime: new Date(task.startTime),
-    endTime: new Date(task.endTime),
+    startTime: task.startTime ? new Date(task.startTime) : null,
+    endTime: task.endTime ? new Date(task.endTime) : null,
     createdAt: new Date(task.createdAt),
     updatedAt: new Date(task.updatedAt),
     createdBy: task.createdBy
@@ -87,8 +89,8 @@ export function parseTaskFromJson(task: Task): Task {
 export function serializeTaskForJson(task: Task) {
   return {
     ...task,
-    startTime: task.startTime.toISOString(),
-    endTime: task.endTime.toISOString(),
+    startTime: task.startTime?.toISOString() ?? null,
+    endTime: task.endTime?.toISOString() ?? null,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
     createdBy: task.createdBy

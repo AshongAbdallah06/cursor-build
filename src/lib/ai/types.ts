@@ -12,8 +12,8 @@ export interface ScheduleEventResult {
   task: {
     id: string;
     title: string;
-    startTime: string;
-    endTime: string;
+    startTime: string | null;
+    endTime: string | null;
     status: string;
   };
   googleEvent: {

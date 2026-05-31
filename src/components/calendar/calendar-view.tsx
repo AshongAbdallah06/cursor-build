@@ -69,9 +69,18 @@ export function CalendarView() {
     enabled: Boolean(googleStatus?.connected && googleStatus?.syncEnabled),
   });
 
+  const dedupedGoogleEvents = useMemo(() => {
+    const linkedIds = new Set(
+      visibleTasks
+        .map((task) => task.googleEventId)
+        .filter((id): id is string => Boolean(id)),
+    );
+    return googleEvents.filter((event) => !linkedIds.has(event.id));
+  }, [visibleTasks, googleEvents]);
+
   const allEvents = useMemo(
-    () => buildCalendarEvents(visibleTasks, googleEvents, currentUser.id),
-    [visibleTasks, googleEvents, currentUser.id],
+    () => buildCalendarEvents(visibleTasks, dedupedGoogleEvents, currentUser.id),
+    [visibleTasks, dedupedGoogleEvents, currentUser.id],
   );
 
   const events = useMemo(
@@ -155,7 +164,7 @@ export function CalendarView() {
         <p className="text-xs text-amber-700">{tasksError}</p>
       )}
 
-      {googleStatus?.connected && googleLoading && googleEvents.length === 0 && (
+      {googleStatus?.connected && googleLoading && dedupedGoogleEvents.length === 0 && googleEvents.length === 0 && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
           Syncing Google Calendar…

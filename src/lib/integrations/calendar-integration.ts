@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import {
   GoogleCalendarAuthError,
+  deleteGoogleCalendarEventWithAuth,
   insertGoogleCalendarEventWithAuth,
   listGoogleCalendarEventsWithAuth,
+  updateGoogleCalendarEventWithAuth,
 } from "@/lib/google/client";
 import type { GoogleCalendarEvent } from "@/types";
 
@@ -257,6 +259,60 @@ export async function createGoogleEventForUser(
   return mapped;
 }
 
+export async function updateGoogleEventForUser(
+  userId: string,
+  eventId: string,
+  input: {
+    title: string;
+    description?: string | null;
+    startTime: Date;
+    endTime: Date;
+  },
+): Promise<GoogleCalendarEvent> {
+  const integration = await getIntegrationForUser(userId);
+  if (!integration || !integration.syncEnabled) {
+    throw new Error(
+      "Google Calendar is not connected. Connect it in Settings to sync events.",
+    );
+  }
+
+  const updated = await updateGoogleCalendarEventWithAuth(
+    buildCalendarCredentials(integration),
+    {
+      calendarId: integration.calendarId,
+      eventId,
+      summary: input.title,
+      description: input.description,
+      startTime: input.startTime,
+      endTime: input.endTime,
+    },
+  );
+
+  const mapped = mapGoogleEvent(updated);
+  if (!mapped) {
+    throw new Error("Failed to update Google Calendar event");
+  }
+
+  return mapped;
+}
+
+export async function deleteGoogleEventForUser(
+  userId: string,
+  eventId: string,
+): Promise<void> {
+  const integration = await getIntegrationForUser(userId);
+  if (!integration || !integration.syncEnabled) {
+    throw new Error(
+      "Google Calendar is not connected. Connect it in Settings to sync events.",
+    );
+  }
+
+  await deleteGoogleCalendarEventWithAuth(buildCalendarCredentials(integration), {
+    calendarId: integration.calendarId,
+    eventId,
+  });
+}
+
 export async function getScheduleContextForUser(
   userId: string,
   startDate: string,
@@ -279,13 +335,13 @@ export async function getScheduleContextForUser(
       OR: [
         {
           assignedToId: userId,
-          startTime: { lte: timeMax },
-          endTime: { gte: timeMin },
+          startTime: { not: null, lte: timeMax },
+          endTime: { not: null, gte: timeMin },
         },
         {
           createdById: userId,
-          startTime: { lte: timeMax },
-          endTime: { gte: timeMin },
+          startTime: { not: null, lte: timeMax },
+          endTime: { not: null, gte: timeMin },
         },
       ],
     },
@@ -322,8 +378,8 @@ export async function getScheduleContextForUser(
       title: task.title,
       status: task.status,
       priority: task.priority,
-      startTime: task.startTime.toISOString(),
-      endTime: task.endTime.toISOString(),
+      startTime: task.startTime?.toISOString() ?? null,
+      endTime: task.endTime?.toISOString() ?? null,
     })),
     googleEvents: googleEvents.map((event) => ({
       id: event.id,

@@ -1,5 +1,6 @@
 import type { EventInput } from "@fullcalendar/core";
 import type { BusySlot, GoogleCalendarEvent, Task, TaskStatus } from "@/types";
+import { isTaskScheduled } from "@/lib/tasks/validation";
 import {
   BUSY_SLOT_EVENT_COLORS,
   GOOGLE_BUSY_EVENT_COLORS,
@@ -29,7 +30,11 @@ function getEventBorderColor(task: Task): string {
 export function taskToCalendarEvent(
   task: Task,
   options?: { showRequesterName?: boolean },
-): EventInput {
+): EventInput | null {
+  if (!isTaskScheduled(task)) {
+    return null;
+  }
+
   const colors = TASK_STATUS_EVENT_COLORS[task.status];
   const title =
     options?.showRequesterName && task.createdBy
@@ -39,8 +44,8 @@ export function taskToCalendarEvent(
   return {
     id: task.id,
     title,
-    start: task.startTime,
-    end: task.endTime,
+    start: task.startTime!,
+    end: task.endTime!,
     backgroundColor: colors.bg,
     borderColor: getEventBorderColor(task),
     textColor: colors.text,
@@ -53,7 +58,11 @@ export function taskToCalendarEvent(
   };
 }
 
-export function busySlotToCalendarEvent(slot: BusySlot): EventInput {
+export function busySlotToCalendarEvent(slot: BusySlot): EventInput | null {
+  if (!slot.startTime || !slot.endTime) {
+    return null;
+  }
+
   return {
     id: slot.id,
     title: "Busy",
@@ -102,14 +111,16 @@ export function buildCalendarEvents(
   googleEvents: GoogleCalendarEvent[] = [],
   userId?: string,
 ): EventInput[] {
-  const taskEvents = tasks.map((task) =>
-    taskToCalendarEvent(task, {
-      showRequesterName:
-        Boolean(userId) &&
-        task.assignedToId === userId &&
-        task.createdById !== userId,
-    }),
-  );
+  const taskEvents = tasks
+    .map((task) =>
+      taskToCalendarEvent(task, {
+        showRequesterName:
+          Boolean(userId) &&
+          task.assignedToId === userId &&
+          task.createdById !== userId,
+      }),
+    )
+    .filter((event): event is EventInput => event !== null);
 
   const googleCalendarEvents = googleEvents.map(googleEventToCalendarEvent);
 

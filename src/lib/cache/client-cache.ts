@@ -37,6 +37,7 @@ export class ClientCache<T> {
   }
 }
 
-export const TASKS_STALE_MS = 60_000;
+export const TASKS_STALE_MS = 5 * 60_000;
+export const NOTIFICATIONS_STALE_MS = 5 * 60_000;
 export const GOOGLE_STATUS_STALE_MS = 2 * 60_000;
 export const GOOGLE_EVENTS_STALE_MS = 5 * 60_000;

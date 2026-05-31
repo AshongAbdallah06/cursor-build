@@ -152,8 +152,8 @@ async function handleScheduleEvent(
     task: {
       id: task.id,
       title: task.title,
-      startTime: task.startTime.toISOString(),
-      endTime: task.endTime.toISOString(),
+      startTime: task.startTime?.toISOString() ?? null,
+      endTime: task.endTime?.toISOString() ?? null,
       status: task.status,
     },
     googleEvent,

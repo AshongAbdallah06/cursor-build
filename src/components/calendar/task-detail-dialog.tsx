@@ -17,6 +17,7 @@ import {
   isOutgoingRequest,
   isPersonalTask,
 } from "@/lib/tasks/permissions";
+import { isTaskScheduled } from "@/lib/tasks/validation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -82,9 +83,9 @@ export function TaskDetailDialog({
     setForm({
       title: task.title,
       description: task.description ?? "",
-      date: format(task.startTime, "yyyy-MM-dd"),
-      startTime: format(task.startTime, "HH:mm"),
-      endTime: format(task.endTime, "HH:mm"),
+      date: task.startTime ? format(task.startTime, "yyyy-MM-dd") : "",
+      startTime: task.startTime ? format(task.startTime, "HH:mm") : "",
+      endTime: task.endTime ? format(task.endTime, "HH:mm") : "",
       priority: task.priority,
       status: task.status,
     });
@@ -103,6 +104,17 @@ export function TaskDetailDialog({
   };
 
   const handleSave = () => {
+    if (!isTaskScheduled(task) && isEditing) {
+      updateTask(task.id, {
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        priority: form.priority,
+        status: form.status,
+      });
+      setIsEditing(false);
+      return;
+    }
+
     const startTime = combineDateAndTime(form.date, form.startTime);
     const endTime = combineDateAndTime(form.date, form.endTime);
 
@@ -141,8 +153,9 @@ export function TaskDetailDialog({
             <div className="min-w-0 flex-1 space-y-1">
               <DialogTitle>{isEditing ? "Edit task" : task.title}</DialogTitle>
               <DialogDescription>
-                {format(task.startTime, "EEEE, MMMM d, yyyy · h:mm a")} –{" "}
-                {format(task.endTime, "h:mm a")}
+                {isTaskScheduled(task) && task.startTime && task.endTime
+                  ? `${format(task.startTime, "EEEE, MMMM d, yyyy · h:mm a")} – ${format(task.endTime, "h:mm a")}`
+                  : "No schedule set"}
               </DialogDescription>
             </div>
             {!isEditing && (
@@ -196,6 +209,7 @@ export function TaskDetailDialog({
           <Separator />
 
           {isEditing ? (
+            isTaskScheduled(task) ? (
             <div className="space-y-3">
               <div className="space-y-2">
                 <Label htmlFor="title">Title</Label>
@@ -283,6 +297,57 @@ export function TaskDetailDialog({
                 </Select>
               </div>
             </div>
+            ) : (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="title">Title</Label>
+                <Input
+                  id="title"
+                  value={form.title}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, title: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={form.description}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="priority">Priority</Label>
+                <Select
+                  value={form.priority}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      priority: value as TaskPriority,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="priority" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_PRIORITIES.map((priority) => (
+                      <SelectItem key={priority} value={priority}>
+                        {TASK_PRIORITY_LABELS[priority]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            )
           ) : (
             <div className="min-w-0 space-y-3 text-sm">
               {task.description && (
@@ -318,6 +383,9 @@ export function TaskDetailDialog({
                 )}
                 {isOutgoingRequest(currentUser.id, task) && (
                   <Badge variant="outline">Outgoing request</Badge>
+                )}
+                {!isTaskScheduled(task) && (
+                  <Badge variant="outline">Unscheduled</Badge>
                 )}
               </div>
             </div>

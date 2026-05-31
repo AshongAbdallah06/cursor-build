@@ -15,6 +15,7 @@ import {
   saveAssistantChat,
 } from "@/lib/cache/assistant-chat-cache";
 import { invalidateGoogleCalendarCache } from "@/lib/cache/google-calendar-cache";
+import { invalidateTasksCache } from "@/lib/cache/dashboard-cache";
 import { useTasks } from "@/components/providers/tasks-provider";
 import { useUser } from "@/components/providers/user-provider";
 
@@ -65,6 +66,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
 
   const handleCalendarUpdated = useCallback(() => {
     invalidateGoogleCalendarCache(currentUser.id);
+    invalidateTasksCache(currentUser.id);
     void refreshTasks({ force: true });
   }, [currentUser.id, refreshTasks]);
 

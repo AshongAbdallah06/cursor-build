@@ -247,3 +247,89 @@ export async function insertGoogleCalendarEvent(
 
   return response.data;
 }
+
+export async function updateGoogleCalendarEvent(
+  calendar: calendar_v3.Calendar,
+  options: {
+    calendarId: string;
+    eventId: string;
+    summary: string;
+    description?: string | null;
+    startTime: Date;
+    endTime: Date;
+  },
+) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const response = await calendar.events.patch({
+    calendarId: options.calendarId,
+    eventId: options.eventId,
+    requestBody: {
+      summary: options.summary,
+      description: options.description ?? undefined,
+      start: {
+        dateTime: options.startTime.toISOString(),
+        timeZone,
+      },
+      end: {
+        dateTime: options.endTime.toISOString(),
+        timeZone,
+      },
+    },
+  });
+
+  return response.data;
+}
+
+export async function updateGoogleCalendarEventWithAuth(
+  credentials: Parameters<typeof getAuthenticatedCalendarClient>[0],
+  options: {
+    calendarId: string;
+    eventId: string;
+    summary: string;
+    description?: string | null;
+    startTime: Date;
+    endTime: Date;
+  },
+) {
+  const calendar = await getAuthenticatedCalendarClient(credentials);
+
+  return withGoogleAuthRetry(
+    () => updateGoogleCalendarEvent(calendar, options),
+    async () => {
+      const refreshedCalendar = await getAuthenticatedCalendarClient(credentials);
+      return updateGoogleCalendarEvent(refreshedCalendar, options);
+    },
+  );
+}
+
+export async function deleteGoogleCalendarEvent(
+  calendar: calendar_v3.Calendar,
+  options: {
+    calendarId: string;
+    eventId: string;
+  },
+) {
+  await calendar.events.delete({
+    calendarId: options.calendarId,
+    eventId: options.eventId,
+  });
+}
+
+export async function deleteGoogleCalendarEventWithAuth(
+  credentials: Parameters<typeof getAuthenticatedCalendarClient>[0],
+  options: {
+    calendarId: string;
+    eventId: string;
+  },
+) {
+  const calendar = await getAuthenticatedCalendarClient(credentials);
+
+  return withGoogleAuthRetry(
+    () => deleteGoogleCalendarEvent(calendar, options),
+    async () => {
+      const refreshedCalendar = await getAuthenticatedCalendarClient(credentials);
+      return deleteGoogleCalendarEvent(refreshedCalendar, options);
+    },
+  );
+}

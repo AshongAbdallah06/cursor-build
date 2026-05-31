@@ -8,9 +8,15 @@ import {
 import {
   tasksOverlap,
   validateTaskTimes,
+  isTaskScheduled,
 } from "@/lib/tasks/validation";
 import type { TaskPriority } from "@/types";
 import { TASK_STATUS_LABELS } from "@/lib/constants";
+import {
+  removeLinkedTaskGoogleEvent,
+  syncIncomingRequestToGoogleCalendar,
+  syncLinkedTaskGoogleEvent,
+} from "@/lib/tasks/task-google-sync";
 
 const taskInclude = {
   createdBy: true,
@@ -32,8 +38,8 @@ export interface CreatePublicTaskRequestInput {
   requesterEmail: string;
   title: string;
   description?: string;
-  startTime: Date;
-  endTime: Date;
+  startTime?: Date | null;
+  endTime?: Date | null;
   priority: TaskPriority;
 }
 
@@ -64,13 +70,20 @@ async function assertNoScheduleConflict(
   const existingTasks = await prisma.task.findMany({
     where: {
       assignedToId: assigneeId,
+      startTime: { not: null },
+      endTime: { not: null },
       ...(excludeTaskId ? { id: { not: excludeTaskId } } : {}),
     },
     select: { startTime: true, endTime: true },
   });
 
   const hasConflict = existingTasks.some((task) =>
-    tasksOverlap(startTime, endTime, task.startTime, task.endTime),
+    tasksOverlap(
+      startTime,
+      endTime,
+      task.startTime!,
+      task.endTime!,
+    ),
   );
 
   if (hasConflict) {
@@ -107,18 +120,23 @@ async function findOrCreateRequester(email: string, fullName: string) {
 export async function createPublicTaskRequest(
   input: CreatePublicTaskRequestInput,
 ) {
-  const timeError = validateTaskTimes(input.startTime, input.endTime);
+  const timeError = validateTaskTimes(
+    input.startTime ?? null,
+    input.endTime ?? null,
+  );
   if (timeError) {
     throw new Error(timeError);
   }
 
   const host = await assertUserExists(input.hostUserId);
 
-  await assertNoScheduleConflict(
-    input.hostUserId,
-    input.startTime,
-    input.endTime,
-  );
+  if (input.startTime && input.endTime) {
+    await assertNoScheduleConflict(
+      input.hostUserId,
+      input.startTime,
+      input.endTime,
+    );
+  }
 
   const requester = await findOrCreateRequester(
     input.requesterEmail,
@@ -129,8 +147,8 @@ export async function createPublicTaskRequest(
     data: {
       title: input.title.trim(),
       description: input.description?.trim() || null,
-      startTime: input.startTime,
-      endTime: input.endTime,
+      startTime: input.startTime ?? null,
+      endTime: input.endTime ?? null,
       createdById: requester.id,
       assignedToId: input.hostUserId,
       status: "PENDING",
@@ -139,11 +157,34 @@ export async function createPublicTaskRequest(
     include: taskInclude,
   });
 
+  let syncedTask = task;
+
+  if (isTaskScheduled(task)) {
+    const googleEventId = await syncIncomingRequestToGoogleCalendar({
+      hostUserId: input.hostUserId,
+      title: task.title,
+      description: task.description,
+      startTime: task.startTime!,
+      endTime: task.endTime!,
+      requesterName: requester.fullName,
+      requesterEmail: requester.email,
+      status: task.status,
+    });
+
+    if (googleEventId) {
+      syncedTask = await prisma.task.update({
+        where: { id: task.id },
+        data: { googleEventId },
+        include: taskInclude,
+      });
+    }
+  }
+
   await prisma.notification.create({
     data: {
       userId: input.hostUserId,
       type: "TASK_ADDED",
-      message: `${requester.fullName} requested a new task: "${task.title}"`,
+      message: `${requester.fullName} requested a new task: "${syncedTask.title}"`,
     },
   });
 
@@ -152,11 +193,11 @@ export async function createPublicTaskRequest(
     providerName: host.fullName,
     clientName: requester.fullName,
     clientEmail: requester.email,
-    title: task.title,
-    description: task.description,
-    startTime: task.startTime,
-    endTime: task.endTime,
-    priority: task.priority,
+    title: syncedTask.title,
+    description: syncedTask.description,
+    startTime: syncedTask.startTime,
+    endTime: syncedTask.endTime,
+    priority: syncedTask.priority,
   }).then((result) => {
     if (!result.sent) {
       console.warn("[email] Task request notification was not sent:", result);
@@ -165,7 +206,7 @@ export async function createPublicTaskRequest(
     console.error("Failed to send task request email:", err);
   });
 
-  return serializeTask(task);
+  return serializeTask(syncedTask);
 }
 
 export async function createAssistantSchedule(
@@ -232,16 +273,60 @@ export async function updateTaskForUser(
     throw new Error(timeError);
   }
 
-  await assertNoScheduleConflict(
-    existing.assignedToId,
-    startTime,
-    endTime,
-    taskId,
-  );
+  if (startTime && endTime) {
+    await assertNoScheduleConflict(
+      existing.assignedToId,
+      startTime,
+      endTime,
+      taskId,
+    );
+  }
+
+  const isIncomingRequest = existing.createdById !== existing.assignedToId;
+  const nextStatus = data.status ?? existing.status;
+  let nextGoogleEventId = existing.googleEventId;
+
+  if (
+    isIncomingRequest &&
+    existing.googleEventId &&
+    isTaskScheduled({ startTime, endTime })
+  ) {
+    const requester = await prisma.user.findUnique({
+      where: { id: existing.createdById },
+    });
+
+    if (requester) {
+      if (nextStatus === "DECLINED") {
+        await removeLinkedTaskGoogleEvent(
+          existing.assignedToId,
+          existing.googleEventId,
+        );
+        nextGoogleEventId = null;
+      } else if (startTime && endTime) {
+        await syncLinkedTaskGoogleEvent({
+          hostUserId: existing.assignedToId,
+          googleEventId: existing.googleEventId,
+          title: data.title?.trim() ?? existing.title,
+          description:
+            data.description !== undefined
+              ? data.description
+              : existing.description,
+          startTime,
+          endTime,
+          requesterName: requester.fullName,
+          requesterEmail: requester.email,
+          status: nextStatus,
+        });
+      }
+    }
+  }
 
   const task = await prisma.task.update({
     where: { id: taskId },
-    data,
+    data: {
+      ...data,
+      googleEventId: nextGoogleEventId,
+    },
     include: taskInclude,
   });
 
@@ -267,6 +352,10 @@ export async function deleteTaskForUser(userId: string, taskId: string) {
   }
 
   await assertTaskAssignedToUser(userId, existing.assignedToId);
+
+  if (existing.googleEventId) {
+    await removeLinkedTaskGoogleEvent(existing.assignedToId, existing.googleEventId);
+  }
 
   await prisma.task.delete({ where: { id: taskId } });
 }

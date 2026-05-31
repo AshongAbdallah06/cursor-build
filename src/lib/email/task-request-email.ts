@@ -14,8 +14,8 @@ interface TaskRequestEmailInput {
   clientEmail: string;
   title: string;
   description: string | null;
-  startTime: Date;
-  endTime: Date;
+  startTime: Date | null;
+  endTime: Date | null;
   priority: TaskPriority;
 }
 
@@ -69,7 +69,11 @@ export async function sendTaskRequestEmail(input: TaskRequestEmailInput) {
   });
 }
 
-function formatScheduleRange(start: Date, end: Date): string {
+function formatScheduleRange(start: Date | null, end: Date | null): string {
+  if (!start || !end) {
+    return "No date or time specified";
+  }
+
   if (isSameDay(start, end)) {
     return `${format(start, "EEEE, MMMM d, yyyy · h:mm a")} – ${format(end, "h:mm a")}`;
   }

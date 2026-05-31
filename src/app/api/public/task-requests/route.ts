@@ -4,7 +4,7 @@ import {
   getUserPublicProfile,
 } from "@/lib/tasks/task-service";
 import { serializeTaskForJson } from "@/lib/tasks/serialize";
-import { combineDateAndTime, validateTaskTimes } from "@/lib/tasks/validation";
+import { parseOptionalSchedule } from "@/lib/tasks/validation";
 import type { TaskPriority } from "@/types";
 
 export async function GET(request: Request) {
@@ -36,21 +36,15 @@ export async function POST(request: Request) {
       endDate?: string;
       endTime?: string;
       date?: string;
+      sameDay?: boolean;
       priority?: TaskPriority;
     };
-
-    const startDate = body.startDate ?? body.date;
-    const endDate = body.endDate ?? body.date;
 
     if (
       !body.providerId ||
       !body.clientName?.trim() ||
       !body.clientEmail?.trim() ||
       !body.title?.trim() ||
-      !startDate ||
-      !endDate ||
-      !body.startTime ||
-      !body.endTime ||
       !body.priority
     ) {
       return NextResponse.json(
@@ -59,12 +53,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const startTime = combineDateAndTime(startDate, body.startTime);
-    const endTime = combineDateAndTime(endDate, body.endTime);
-    const timeError = validateTaskTimes(startTime, endTime);
+    const schedule = parseOptionalSchedule({
+      startDate: body.startDate ?? body.date,
+      startTime: body.startTime,
+      endDate: body.endDate ?? body.date,
+      endTime: body.endTime,
+      sameDay: body.sameDay,
+    });
 
-    if (timeError) {
-      return NextResponse.json({ error: timeError }, { status: 400 });
+    if (schedule.error) {
+      return NextResponse.json({ error: schedule.error }, { status: 400 });
     }
 
     const task = await createPublicTaskRequest({
@@ -73,8 +71,8 @@ export async function POST(request: Request) {
       requesterEmail: body.clientEmail,
       title: body.title,
       description: body.description,
-      startTime,
-      endTime,
+      startTime: schedule.startTime,
+      endTime: schedule.endTime,
       priority: body.priority,
     });
 

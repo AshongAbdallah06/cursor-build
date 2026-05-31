@@ -7,6 +7,7 @@ import { format, isSameDay } from "date-fns";
 import { CalendarCheck, Loader2 } from "lucide-react";
 import { TaskRequestForm } from "@/components/request/task-request-form";
 import { APP_NAME } from "@/lib/constants";
+import { isTaskScheduled } from "@/lib/tasks/validation";
 import {
   Card,
   CardContent,
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { Task } from "@/types";
 
 interface ProviderInfo {
   id: string;
@@ -32,11 +34,7 @@ export function TaskRequestPageContent() {
       ? null
       : "This link is missing a provider. Ask the person you want to book with for their share link.",
   );
-  const [submitted, setSubmitted] = useState<{
-    title: string;
-    startTime: string;
-    endTime: string;
-  } | null>(null);
+  const [submitted, setSubmitted] = useState<Task | null>(null);
 
   useEffect(() => {
     if (!providerId) return;
@@ -107,10 +105,7 @@ export function TaskRequestPageContent() {
           <div className="rounded-lg border bg-muted/50 p-3">
             <p className="font-medium">{submitted.title}</p>
             <p className="text-muted-foreground">
-              {formatScheduleRange(
-                new Date(submitted.startTime),
-                new Date(submitted.endTime),
-              )}
+              {formatSubmittedSchedule(submitted)}
             </p>
           </div>
           <Button variant="outline" onClick={() => setSubmitted(null)}>
@@ -124,19 +119,7 @@ export function TaskRequestPageContent() {
   return (
     <TaskRequestForm
       provider={provider}
-      onSuccess={(task) =>
-        setSubmitted({
-          title: task.title,
-          startTime:
-            typeof task.startTime === "string"
-              ? task.startTime
-              : task.startTime.toISOString(),
-          endTime:
-            typeof task.endTime === "string"
-              ? task.endTime
-              : task.endTime.toISOString(),
-        })
-      }
+      onSuccess={(task) => setSubmitted(task)}
     />
   );
 }
@@ -154,7 +137,14 @@ export function TaskRequestPageHeader() {
   );
 }
 
-function formatScheduleRange(start: Date, end: Date): string {
+function formatSubmittedSchedule(task: Task): string {
+  if (!isTaskScheduled(task) || !task.startTime || !task.endTime) {
+    return "No date or time specified";
+  }
+
+  const start = task.startTime;
+  const end = task.endTime;
+
   if (isSameDay(start, end)) {
     return `${format(start, "EEEE, MMMM d, yyyy · h:mm a")} – ${format(end, "h:mm a")}`;
   }

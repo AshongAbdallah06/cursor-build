@@ -24,12 +24,13 @@ export interface Task {
   id: string;
   title: string;
   description: string | null;
-  startTime: Date;
-  endTime: Date;
+  startTime: Date | null;
+  endTime: Date | null;
   createdById: string;
   assignedToId: string;
   status: TaskStatus;
   priority: TaskPriority;
+  googleEventId: string | null;
   createdAt: Date;
   updatedAt: Date;
   createdBy?: User;
@@ -48,8 +49,8 @@ export interface Notification {
 /** Busy slot shown to clients without revealing other clients' task details */
 export interface BusySlot {
   id: string;
-  startTime: Date;
-  endTime: Date;
+  startTime: Date | null;
+  endTime: Date | null;
 }
 
 export interface TaskFormData {
