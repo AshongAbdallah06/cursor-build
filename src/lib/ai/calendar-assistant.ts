@@ -13,6 +13,7 @@ import {
 import type {
   AssistantChatMessage,
   AssistantChatResponse,
+  AssistantScheduleDraft,
 } from "@/lib/ai/types";
 import { getGoogleIntegrationStatus } from "@/lib/integrations/calendar-integration";
 import { prisma } from "@/lib/prisma";
@@ -62,6 +63,7 @@ export async function runCalendarAssistantChat(
 
   let contents: GeminiContent[] = toGeminiContents(messages);
   let calendarUpdated = false;
+  let pendingDraft: AssistantScheduleDraft | undefined;
   let finalMessage = "";
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -83,12 +85,10 @@ export async function runCalendarAssistantChat(
 
     for (const call of functionCalls) {
       try {
-        const { result, calendarUpdated: updated } = await executeCalendarTool(
-          userId,
-          call.name,
-          call.args ?? {},
-        );
+        const { result, calendarUpdated: updated, pendingDraft: draft } =
+          await executeCalendarTool(userId, call.name, call.args ?? {});
         if (updated) calendarUpdated = true;
+        if (draft) pendingDraft = draft;
 
         contents = [
           ...contents,
@@ -136,10 +136,12 @@ export async function runCalendarAssistantChat(
   }
 
   if (!finalMessage) {
-    finalMessage = calendarUpdated
-      ? "Done — your calendar has been updated."
-      : "I'm here to help plan your calendar. What would you like to schedule?";
+    finalMessage = pendingDraft
+      ? "I've drafted that for you — review the details below and tap Confirm and Add when you're ready."
+      : calendarUpdated
+        ? "Done — your calendar has been updated."
+        : "I'm here to help plan your calendar. What would you like to schedule?";
   }
 
-  return { message: finalMessage, calendarUpdated };
+  return { message: finalMessage, calendarUpdated, pendingDraft };
 }

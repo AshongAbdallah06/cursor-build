@@ -213,13 +213,7 @@ export async function createAssistantSchedule(
   userId: string,
   input: CreateAssistantScheduleInput,
 ) {
-  await getSessionUser(userId);
-  const timeError = validateTaskTimes(input.startTime, input.endTime);
-  if (timeError) {
-    throw new Error(timeError);
-  }
-
-  await assertNoScheduleConflict(userId, input.startTime, input.endTime);
+  await validateAssistantScheduleInput(userId, input);
 
   const task = await prisma.task.create({
     data: {
@@ -236,6 +230,19 @@ export async function createAssistantSchedule(
   });
 
   return serializeTask(task);
+}
+
+export async function validateAssistantScheduleInput(
+  userId: string,
+  input: CreateAssistantScheduleInput,
+) {
+  await getSessionUser(userId);
+  const timeError = validateTaskTimes(input.startTime, input.endTime);
+  if (timeError) {
+    throw new Error(timeError);
+  }
+
+  await assertNoScheduleConflict(userId, input.startTime, input.endTime);
 }
 
 export async function listTasksForUser(userId: string) {

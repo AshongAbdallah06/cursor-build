@@ -2,6 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { Loader2, Send } from "lucide-react";
+import { AssistantDraftCard } from "@/components/calendar/assistant-draft-card";
 import { AssistantMessageContent } from "@/components/calendar/assistant-message-content";
 import { useAssistant } from "@/components/providers/assistant-provider";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,10 @@ export function CalendarAssistantPanel() {
     input,
     setInput,
     sending,
+    confirmingDraftId,
     sendMessage,
+    confirmDraft,
+    dismissDraft,
   } = useAssistant();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -56,7 +60,7 @@ export function CalendarAssistantPanel() {
   };
 
   return (
-    <div className="flex h-[min(420px,calc(100vh-8rem))] flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div
         ref={scrollContainerRef}
         className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain [overflow-anchor:none] px-4 py-3"
@@ -73,7 +77,18 @@ export function CalendarAssistantPanel() {
               )}
             >
               {message.role === "assistant" ? (
-                <AssistantMessageContent content={message.content} />
+                <>
+                  <AssistantMessageContent content={message.content} />
+                  {message.draft && message.draftStatus ? (
+                    <AssistantDraftCard
+                      draft={message.draft}
+                      status={message.draftStatus}
+                      confirming={confirmingDraftId === message.draft.id}
+                      onConfirm={() => void confirmDraft(message.draft!.id)}
+                      onDismiss={() => dismissDraft(message.draft!.id)}
+                    />
+                  ) : null}
+                </>
               ) : (
                 message.content
               )}
